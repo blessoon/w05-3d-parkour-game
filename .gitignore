@@ -1,0 +1,25 @@
+﻿# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Dependencies/build output
+node_modules/
+dist/
+build/
+
+# Local secrets and recordings
+.env
+.env.*
+*.key
+*.pem
+*.mp4
+*.mov
+
+# Temporary files
+*.log
+*.tmp
+
+# Original local backup (project copy is in w05_3d_game/)
+/index3D跑酷.html
