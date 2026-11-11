@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 跑酷</title>
+<style>
+  :root {
+    /* 粉色系文字统一字体：英文手写风，中文回退微软雅黑 */
+    --pink-font: "Comic Sans MS", "Segoe Print", "Microsoft YaHei", cursive;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; }
+  #hud {
+    position: fixed; top: 12px; left: 0; right: 0;
+    text-align: center; color: #fff; font: 20px/1.4 system-ui, sans-serif;
+    pointer-events: none; text-shadow: 0 1px 4px #000;
+  }
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    color: #fff; font: 22px system-ui, sans-serif;
+    background: rgba(0,0,0,.55);
+  }
+  #overlay h1 { margin: 0; font-size: 40px; }
+  #overlay small { opacity: .8; }
+  #overlay.hidden { display: none; }
+  #pauseBtns { display: flex; gap: 14px; margin-top: 8px; }
+  #pauseBtns.hidden { display: none; }
+  #pauseBtns button {
+    font: 20px system-ui, sans-serif; padding: 10px 32px; cursor: pointer;
+    color: #fff; background: #22335c; border: 2px solid #3d5aa0; border-radius: 10px;
+  }
+  #pauseBtns button:hover { background: #2d4479; }
+  #bonusCounter {
+    position: fixed; top: 12px; right: 16px;
+    color: #ff66cc; font: bold 32px/1.2 var(--pink-font);
+    pointer-events: none; text-shadow: 0 1px 4px #000;
+  }
+  /* 拾取粉色方块的全屏闪光 */
+  #flash {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle, rgba(255,102,204,.25), rgba(255,102,204,.05));
+  }
+  #flash.active { animation: flashFade .45s ease-out; }
+  @keyframes flashFade { 0% { opacity: 1; } 100% { opacity: 0; } }
+  /* 拾取飘字 */
+  .float-text {
+    position: fixed; transform: translate(-50%, -50%);
+    color: #ff66cc; font: bold 28px var(--pink-font);
+    text-shadow: 0 1px 4px #000; pointer-events: none;
+    animation: floatUp 1s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translate(-50%, -50%); }
+    100% { opacity: 0; transform: translate(-50%, -150px); }
+  }
+  /* 技能充能（左上角） */
+  #skillHud {
+    position: fixed; top: 12px; left: 16px;
+    color: #fff; font: bold 22px system-ui, sans-serif;
+    pointer-events: none; text-shadow: 0 1px 4px #000;
+  }
+  #skillHud.ready { color: #ff66cc; animation: blink .6s infinite alternate; }
+  @keyframes blink { from { opacity: 1; } to { opacity: .35; } }
+  /* 菜单类界面 */
+  .screen {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    color: #fff; font: 22px system-ui, sans-serif;
+    background: rgba(0,0,0,.6);
+  }
+  .screen.hidden { display: none; }
+  .screen h1 { margin: 0 0 10px; font-size: 42px; }
+  .screen button {
+    font: 24px system-ui, sans-serif; padding: 12px 48px; cursor: pointer;
+    color: #fff; background: #22335c; border: 2px solid #3d5aa0; border-radius: 10px;
+    min-width: 240px;
+  }
+  .screen button:hover { background: #2d4479; }
+  .char-row { display: flex; gap: 20px; }
+  .char-btn { width: 140px; height: 80px; min-width: 0 !important; font-size: 26px !important; }
+  .char-btn.selected { border-color: #fff; box-shadow: 0 0 12px #fff; }
+  #helpScreen div { line-height: 2; text-align: center; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="hud">得分：<span id="score">0</span>　速度：<span id="speed">0</span></div>
+<div id="skillHud">技能充能：0/3</div>
+<div id="bonusCounter">🩷 <span id="bonusCount">0</span></div>
+<div id="flash"></div>
+
+<!-- 主菜单 -->
+<div id="menu" class="screen">
+  <h1>3D 跑酷</h1>
+  <button id="btnStart">开始游戏</button>
+  <button id="btnChar">角色选择</button>
+  <button id="btnHelp">玩法说明</button>
+</div>
+
+<!-- 角色选择 -->
+<div id="charScreen" class="screen hidden">
+  <h1>角色选择</h1>
+  <div class="char-row">
+    <button class="char-btn selected" data-color="0xff5566" data-char="red" style="background:#a02840;border-color:#ff5566">红色·无敌</button>
+    <button class="char-btn" data-color="0x33cc66" data-char="green" style="background:#1f7a40;border-color:#33cc66">绿色·疾速</button>
+  </div>
+  <button class="back">返回</button>
+</div>
+
+<!-- 玩法说明 -->
+<div id="helpScreen" class="screen hidden">
+  <h1>玩法说明</h1>
+  <div>
+    ← → 或 A / D 换道，↑ 跳跃，↓ 滑铲冲刺，Esc 暂停<br>
+    橙色高墙要换道躲开，蓝色矮栅栏可以跳过，紫色悬梁要按 ↓ 滑铲通过<br>
+    身体进入粉色方块时按 空格 +100 分，连吃有连击加成（地上的粉圈是空中方块的影子）<br>
+    每拾取 1 个粉色方块为技能充能 1 点，攒满 3 点按 V 释放（不消耗右上角计数）<br>
+    🔴 红色技能：无敌 8 秒，火焰环绕<br>
+    🟢 绿色技能：疾速 15 秒（跳跃/换道/滑铲都更快，带残影），期间拾取粉色方块 +5 秒<br>
+    🟢 绿色被动：空中按 Z 迅速下降，可控制落点躲避空中障碍<br>
+    技巧方块（接触时按住组合键触发）：🟩空格+↑二段跳　🟥空格+←左移　🟦空格+→右移　🩵空格+↓滑铲，各 +500 分<br>
+    ⬜白色长条：按住空格滞空滑行，每经过一单位长度 +100 分<br>
+    技巧方块会成链出现（2~4 个），按箭头顺序连续操作即可全部接上，链内不会有障碍<br>
+    粉色方块会出现在障碍波的"活路"上：地面的粉块提示安全道/滑铲道，空中的粉块提示跳跃道
+  </div>
+  <button class="back">返回</button>
+</div>
+
+<!-- 暂停 / 游戏结束（内容动态填充） -->
+<div id="overlay" class="hidden">
+  <h1></h1>
+  <div></div>
+  <small></small>
+  <div id="pauseBtns" class="hidden">
+    <button id="btnResume">继续游戏</button>
+    <button id="btnMenu">返回主界面</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- 场景 ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1020);
+scene.fog = new THREE.Fog(0x0b1020, 20, 90);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 200);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x334466, 1.1));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 10, 5);
+scene.add(dirLight);
+
+// ---------- 常量 ----------
+const LANES = [-2.2, 0, 2.2];   // 三条跑道
+const ROAD_LEN = 200, ROAD_W = 8;
+
+// ---------- 跑道 ----------
+const road = new THREE.Mesh(
+  new THREE.PlaneGeometry(ROAD_W, ROAD_LEN),
+  new THREE.MeshStandardMaterial({ color: 0x1d2a4d })
+);
+road.rotation.x = -Math.PI / 2;
+road.position.z = -ROAD_LEN / 2 + 10;
+scene.add(road);
+
+// 跑道上的装饰线条（滚动产生速度感）
+const lineMat = new THREE.MeshBasicMaterial({ color: 0x3d5aa0 });
+const lines = [];
+for (const x of [-1.1, 1.1]) {
+  for (let i = 0; i < 20; i++) {
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 2), lineMat);
+    dash.rotation.x = -Math.PI / 2;
+    dash.position.set(x, 0.01, -i * 8);
+    scene.add(dash);
+    lines.push(dash);
+  }
+}
+
+// 两侧的简单城市剪影
+const buildingMat = new THREE.MeshStandardMaterial({ color: 0x141c33 });
+for (let i = 0; i < 30; i++) {
+  const h = 2 + Math.random() * 8;
+  const b = new THREE.Mesh(new THREE.BoxGeometry(3, h, 3), buildingMat);
+  const side = i % 2 === 0 ? -1 : 1;
+  b.position.set(side * (6.5 + Math.random() * 3), h / 2, -i * 7 + 10);
+  scene.add(b);
+}
+
+// ---------- 玩家 ----------
+const playerGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9); // 共享几何体（残影也用）
+const player = new THREE.Mesh(
+  playerGeo,
+  new THREE.MeshStandardMaterial({ color: 0xff5566 })
+);
+player.position.set(0, 0.45, 0);
+scene.add(player);
+
+// ---------- 障碍物 ----------
+const obstacles = [];
+const tallMat = new THREE.MeshStandardMaterial({ color: 0xffaa22 }); // 高墙：只能换道躲
+const lowMat = new THREE.MeshStandardMaterial({ color: 0x22ccff });  // 矮栅栏：可以跳过
+const overMat = new THREE.MeshStandardMaterial({ color: 0x9955ff }); // 悬梁：只能滑铲通过
+
+function spawnObstacle(z, lane, type) {
+  let h, y, bottom, top, mat;
+  if (type === 'low') {        // 矮栅栏：0 ~ 0.5，跳过
+    h = 0.5; y = 0.25; bottom = 0; top = 0.5; mat = lowMat;
+  } else if (type === 'over') { // 悬梁：0.7 ~ 1.85，下方只有滑铲（半身高 0.45）能过
+    h = 1.15; y = 1.275; bottom = 0.7; top = 1.85; mat = overMat;
+  } else {                     // 高墙：0 ~ 1.6，换道躲
+    h = 1.6; y = 0.8; bottom = 0; top = 1.6; mat = tallMat;
+  }
+  const obs = new THREE.Mesh(new THREE.BoxGeometry(1.4, h, 1.2), mat);
+  obs.position.set(LANES[lane], y, z);
+  obs.userData.bottom = bottom;
+  obs.userData.top = top;
+  scene.add(obs);
+  obstacles.push(obs);
+}
+
+// ---------- 粉色奖励方块 ----------
+const bonuses = [];
+const bonusMat = new THREE.MeshStandardMaterial({ color: 0xff66cc, emissive: 0x881144 });
+const shadowMat = new THREE.MeshBasicMaterial({ color: 0xff66cc, transparent: true, opacity: 0.35 });
+
+// ---------- 技巧方块 ----------
+const tricks = [];
+const trickMats = {
+  green: new THREE.MeshStandardMaterial({ color: 0x33cc66, emissive: 0x0a4020 }), // 空格+↑：二段跳
+  red: new THREE.MeshStandardMaterial({ color: 0xdd3333, emissive: 0x500a0a }),   // 空格+←：左移
+  blue: new THREE.MeshStandardMaterial({ color: 0x2244cc, emissive: 0x0a1450 }),  // 空格+→：右移
+  cyan: new THREE.MeshStandardMaterial({ color: 0x22cccc, emissive: 0x084040 }),  // 空格+↓：滑铲
+};
+const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x555555 }); // 空格滞空
+
+// 技巧方块正面的方向箭头（按类型缓存纹理）
+const arrowTexCache = {};
+function makeArrow(type) {
+  if (!arrowTexCache[type]) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 96px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(0,0,0,.7)';
+    ctx.fillStyle = '#ffffff';
+    const ch = { green: '↑', red: '←', blue: '→', cyan: '↓' }[type];
+    ctx.strokeText(ch, 64, 68);
+    ctx.fillText(ch, 64, 68);
+    arrowTexCache[type] = new THREE.CanvasTexture(c);
+  }
+  const mat = new THREE.MeshBasicMaterial({ map: arrowTexCache[type], transparent: true });
+  return new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), mat);
+}
+
+// 生成一个技巧方块（type: green/red/blue/cyan，带箭头，空中带投影）
+function addTrickCube(type, lane, y, z) {
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), trickMats[type]);
+  cube.position.set(LANES[lane], y, z);
+  cube.userData = { type };
+  // 正面贴上对应方向箭头，提示玩家要按的方向键
+  const arrow = makeArrow(type);
+  arrow.position.z = 0.46;
+  cube.add(arrow);
+  if (y > 1) {
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.55, 24),
+      new THREE.MeshBasicMaterial({ color: trickMats[type].color, transparent: true, opacity: 0.3 })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(cube.position.x, 0.02, z);
+    scene.add(shadow);
+    cube.userData.shadow = shadow;
+  }
+  scene.add(cube);
+  tricks.push(cube);
+}
+
+// 生成一个白色长条（lane 跑道，zCenter 中心位置，units 单位长度）
+function addWhiteBar(lane, zCenter, units) {
+  const len = units * 0.9;
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, len), whiteMat);
+  bar.position.set(LANES[lane], 1.5, zCenter);
+  bar.userData = { type: 'white', units, traveled: 0, paidUnits: 0 };
+  const shadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, len),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 })
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(LANES[lane], 0.02, zCenter);
+  scene.add(shadow);
+  bar.userData.shadow = shadow;
+  scene.add(bar);
+  tricks.push(bar);
+}
+
+// 单个技巧方块（随机类型，安全跑道）
+function spawnTrick(z) {
+  const types = ['green', 'red', 'blue', 'cyan', 'white'];
+  const type = types[Math.floor(Math.random() * types.length)];
+
+  if (type === 'white') {
+    const units = 3 + Math.floor(Math.random() * 6); // 3~8 单位
+    const len = units * 0.9;
+    const free = [0, 1, 2].filter(l => laneFreeAt(z, l, len / 2 + 4));
+    if (!free.length) return false;
+    addWhiteBar(free[Math.floor(Math.random() * free.length)], z, units);
+    return true;
+  }
+
+  let free = [0, 1, 2].filter(l => laneFreeAt(z, l));
+  if (type === 'red') free = free.filter(l => l > 0);  // 左移方块不放最左边的道
+  if (type === 'blue') free = free.filter(l => l < 2); // 右移方块不放最右边的道
+  if (!free.length) return false;
+  const lane = free[Math.floor(Math.random() * free.length)];
+  addTrickCube(type, lane, Math.random() < 0.5 ? 1.5 : 0.45, z);
+  return true;
+}
+
+// ---------- 技巧链：2~4 个技巧方块按可衔接的模板连续出现 ----------
+// 模板间距按跳跃/滑铲的动作时长设计，全速范围内都能连上
+const CHAINS = [
+  // 空中跳 → 白条滞空 → 白条末端接跳
+  [{ k: 'jumpAir', gap: 0 }, { k: 'white', gap: 12 }, { k: 'jumpAir', gap: 1 }],
+  // 地面跳 → 空中接跳（二段跳）
+  [{ k: 'jumpGround', gap: 0 }, { k: 'jumpAir', gap: 11 }],
+  // 移道 → 滑铲
+  [{ k: 'move', gap: 0 }, { k: 'slide', gap: 12 }],
+  // 长链：空中跳 → 白条 → 移道 → 滑铲
+  [{ k: 'jumpAir', gap: 0 }, { k: 'white', gap: 12 }, { k: 'move', gap: 8 }, { k: 'slide', gap: 12 }],
+  // 白条 → 末端接跳
+  [{ k: 'white', gap: 0 }, { k: 'jumpAir', gap: 1 }],
+  // 空中跳 → 落地滑铲
+  [{ k: 'jumpAir', gap: 0 }, { k: 'slide', gap: 13 }],
+];
+
+// 返回链的总长度（用于推迟后续生成），生成失败返回 0
+function spawnChain(z) {
+  const tmpl = CHAINS[Math.floor(Math.random() * CHAINS.length)];
+  // 安全检查：整条链范围内三条道都必须没有障碍和方块，保证不会必死
+  const estLen = 40 + tmpl.length * 14;
+  const clear = [0, 1, 2].every(l => laneFreeAt(z - estLen / 2, l, estLen / 2 + 8));
+  if (!clear) return 0;
+
+  let lane = 1;      // 链固定从中间道开始，左右移道都有余地
+  let moveDir = 0;
+  let zz = z;
+  const zStart = z;
+
+  for (const step of tmpl) {
+    zz -= step.gap;
+    if (step.k === 'jumpAir') {
+      addTrickCube('green', lane, 1.5, zz);
+    } else if (step.k === 'jumpGround') {
+      addTrickCube('green', lane, 0.45, zz);
+    } else if (step.k === 'slide') {
+      addTrickCube('cyan', lane, 0.45, zz);
+    } else if (step.k === 'move') {
+      if (!moveDir) moveDir = Math.random() < 0.5 ? -1 : 1;
+      addTrickCube(moveDir === -1 ? 'red' : 'blue', lane, 0.45, zz);
+      lane += moveDir; // 触发移道后，链的后续方块在新跑道上
+    } else if (step.k === 'white') {
+      const units = 4;
+      const len = units * 0.9;
+      addWhiteBar(lane, zz - len / 2, units); // 白条从 zz 开始向后延伸
+      zz -= len; // 下一环接在白条末端
+    }
+  }
+  return zStart - zz;
+}
+
+function removeTrick(i) {
+  const t = tricks[i];
+  if (t.userData.shadow) scene.remove(t.userData.shadow);
+  scene.remove(t);
+  tricks.splice(i, 1);
+}
+
+// 某条道在 z 附近 ±margin 内是否有障碍/粉色方块/技巧方块（它们同速移动，相对位置不变）
+function laneFreeAt(z, lane, margin = 6) {
+  const blocked = (o) => Math.abs(o.position.z - z) < margin && o.position.x === LANES[lane];
+  return !obstacles.some(blocked) && !bonuses.some(blocked) && !tricks.some(blocked);
+}
+
+// 在指定跑道、高度生成粉色方块
+function spawnBonusAt(z, lane, y) {
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), bonusMat);
+  cube.position.set(LANES[lane], y, z);
+  if (y > 1) {
+    // 空中方块在地面投一个粉色光圈影子，提示它的水平位置
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), shadowMat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(cube.position.x, 0.02, z);
+    scene.add(shadow);
+    cube.userData.shadow = shadow;
+  }
+  scene.add(cube);
+  bonuses.push(cube);
+}
+
+function spawnBonus(z) {
+  // 只在没有障碍的跑道上生成；三条道都被堵就放弃本次生成
+  const free = [0, 1, 2].filter(l => laneFreeAt(z, l));
+  if (!free.length) return false;
+  const lane = free[Math.floor(Math.random() * free.length)];
+  spawnBonusAt(z, lane, Math.random() < 0.5 ? 1.5 : 0.45); // 一半概率悬空，需要跳起来吃
+  return true;
+}
+
+function removeBonus(i) {
+  const b = bonuses[i];
+  if (b.userData.shadow) scene.remove(b.userData.shadow);
+  scene.remove(b);
+  bonuses.splice(i, 1);
+}
+
+// ---------- 角色技能 ----------
+const flameMatA = new THREE.MeshBasicMaterial({ color: 0xff7722 });
+const flameMatB = new THREE.MeshBasicMaterial({ color: 0xff3322 });
+let flameGroup = null;   // 红色技能的火焰环绕
+const ghosts = [];       // 绿色技能的残影
+let ghostTimer = 0;
+
+function startFlames() {
+  flameGroup = new THREE.Group();
+  for (let i = 0; i < 14; i++) {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 6, 6),
+      i % 2 ? flameMatA : flameMatB
+    );
+    m.userData.a = (i / 14) * Math.PI * 2;
+    flameGroup.add(m);
+  }
+  scene.add(flameGroup);
+}
+
+function spawnGhost() {
+  const mesh = new THREE.Mesh(playerGeo, new THREE.MeshBasicMaterial({
+    color: 0x33ff88, transparent: true, opacity: 0.4,
+  }));
+  mesh.position.copy(player.position);
+  mesh.scale.copy(player.scale);
+  mesh.rotation.copy(player.rotation);
+  scene.add(mesh);
+  ghosts.push({ mesh, life: 0.4 });
+}
+
+function activateSkill() {
+  state.skillCharge -= 3;
+  state.skillT = state.char === 'red' ? 8 : 15;
+  if (state.char === 'red') startFlames();
+  updateSkillHud();
+}
+
+function endSkill() {
+  state.skillT = 0;
+  if (flameGroup) { scene.remove(flameGroup); flameGroup = null; }
+  updateSkillHud();
+}
+
+function updateSkillHud() {
+  if (state.skillT > 0) {
+    skillHudEl.textContent = `技能剩余 ${state.skillT.toFixed(1)}s`;
+    skillHudEl.classList.remove('ready');
+  } else if (state.skillCharge >= 3) {
+    skillHudEl.textContent = '按 V 释放技能！';
+    skillHudEl.classList.add('ready');
+  } else {
+    skillHudEl.textContent = `技能充能：${state.skillCharge}/3`;
+    skillHudEl.classList.remove('ready');
+  }
+}
+
+// 一波障碍：难度越高，一波里障碍越多
+// 生成后有概率在"活路"上放一个粉色方块，引导玩家走正确路径
+function spawnWave(z, difficulty) {
+  const lanes = [0, 1, 2].sort(() => Math.random() - 0.5);
+  const roll = Math.random();
+  const laneTypes = [null, null, null]; // 记录每条道的障碍类型
+  const put = (l, t) => { laneTypes[l] = t; spawnObstacle(z, l, t); };
+
+  if (difficulty >= 2 && roll < 0.15) {
+    // 三条道全是矮栅栏：必须跳
+    for (let i = 0; i < 3; i++) put(i, 'low');
+  } else if (difficulty >= 2 && roll < 0.3) {
+    // 三条道全是悬梁：必须滑铲
+    for (let i = 0; i < 3; i++) put(i, 'over');
+  } else if (difficulty >= 1 && roll < 0.5) {
+    // 两条道堵高墙：只剩一条活路
+    put(lanes[0], 'tall');
+    put(lanes[1], 'tall');
+  } else if (difficulty >= 1 && roll < 0.65) {
+    // 高墙 + 矮栅栏组合
+    put(lanes[0], 'tall');
+    put(lanes[1], 'low');
+  } else if (roll < 0.85) {
+    // 悬梁 + 其他障碍组合（悬梁道可滑铲通过）
+    put(lanes[0], 'over');
+    if (difficulty >= 1) put(lanes[1], Math.random() < 0.5 ? 'tall' : 'low');
+  } else {
+    // 单个障碍
+    const types = ['tall', 'tall', 'low', 'over'];
+    put(lanes[0], types[Math.floor(Math.random() * types.length)]);
+  }
+
+  guideForWave(z, laneTypes);
+}
+
+// 引导方块：在障碍波的正确路径上放粉色方块（约 30% 概率，避免技能泛滥）
+function guideForWave(z, laneTypes) {
+  if (Math.random() > 0.3) return;
+  if (state.skillCharge >= 3) return; // 充能已满就不再刷引导方块
+  const freeLanes = [0, 1, 2].filter(l => !laneTypes[l]);
+  const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  if (freeLanes.length) {
+    // 有空闲道：在活路上放地面方块，引导换道
+    spawnBonusAt(z, rnd(freeLanes), 0.45);
+  } else if (laneTypes.every(t => t === 'low')) {
+    // 全是矮栅栏：空中方块提示"跳"
+    spawnBonusAt(z, rnd([0, 1, 2]), 1.5);
+  } else if (laneTypes.every(t => t === 'over')) {
+    // 全是悬梁：地面方块提示"滑铲通过"
+    spawnBonusAt(z, rnd([0, 1, 2]), 0.45);
+  } else {
+    // 混合波次：优先在矮栅栏道上放空中方块提示"跳"，其次悬梁道放地面方块提示"铲"
+    const lowLanes = [0, 1, 2].filter(l => laneTypes[l] === 'low');
+    const overLanes = [0, 1, 2].filter(l => laneTypes[l] === 'over');
+    if (lowLanes.length) spawnBonusAt(z, rnd(lowLanes), 1.5);
+    else if (overLanes.length) spawnBonusAt(z, rnd(overLanes), 0.45);
+  }
+}
+
+// ---------- 游戏状态 ----------
+const state = {
+  lane: 1,            // 当前跑道索引
+  vy: 0,              // 垂直速度
+  jumping: false,
+  speed: 20,          // 前进速度，会逐渐加快
+  distance: 0,
+  bonus: 0,           // 吃粉色方块获得的额外分数
+  bonusCount: 0,      // 吃到的粉色方块数量
+  combo: 0,           // 连击数（8 秒内连续吃到会累积）
+  comboT: 0,          // 连击剩余有效时间
+  char: 'red',        // 当前角色
+  skillCharge: 0,     // 技能充能（0~3，拾取粉色方块累积）
+  skillT: 0,          // 技能剩余时间（>0 表示技能生效中）
+  slideT: 0,          // 滑铲剩余时间（>0 表示正在滑铲）
+  nextSpawn: 40,
+  nextBonus: 70,      // 下一个粉色方块的生成距离
+  nextTrick: 90,      // 下一个技巧方块的生成距离
+  running: false,
+  paused: false,
+  dead: false,
+};
+
+const overlay = document.getElementById('overlay');
+const scoreEl = document.getElementById('score');
+const speedEl = document.getElementById('speed');
+const bonusCountEl = document.getElementById('bonusCount');
+const flashEl = document.getElementById('flash');
+const skillHudEl = document.getElementById('skillHud');
+const pauseBtns = document.getElementById('pauseBtns');
+
+// 在3D位置飘出得分文字
+function floatText(worldPos, text) {
+  const p = worldPos.clone().project(camera);
+  const el = document.createElement('div');
+  el.className = 'float-text';
+  el.textContent = text;
+  el.style.left = ((p.x * 0.5 + 0.5) * innerWidth) + 'px';
+  el.style.top = ((-p.y * 0.5 + 0.5) * innerHeight) + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+
+// 拾取粉色方块：连击加分 + 飘字 + 闪光 + 玩家发光
+function collectBonus(i) {
+  const b = bonuses[i];
+  const value = Math.min(100 + state.combo * 50, 300); // 连击加成，封顶 300
+  state.bonus += value;
+  state.bonusCount++;
+  bonusCountEl.textContent = state.bonusCount;
+  state.combo++;
+  state.comboT = 8;
+
+  // 技能充能 +1（上限 3，不影响右上角计数器）；绿色技能期间拾取额外延长 5 秒
+  state.skillCharge = Math.min(state.skillCharge + 1, 3);
+  if (state.skillT > 0 && state.char === 'green') state.skillT += 5;
+  updateSkillHud();
+
+  // 在方块的屏幕位置飘出 "+分数" 文字
+  floatText(b.position, `+${value}` + (state.combo > 1 ? ` 连击×${state.combo}` : ''));
+
+  // 全屏粉色闪光（重新触发动画）
+  flashEl.classList.remove('active');
+  void flashEl.offsetWidth;
+  flashEl.classList.add('active');
+
+  // 玩家短暂发光
+  player.material.emissive.setHex(0xff66cc);
+  player.material.emissiveIntensity = 0.8;
+
+  removeBonus(i);
+}
+
+function startGame() {
+  for (const o of obstacles) scene.remove(o);
+  while (bonuses.length) removeBonus(bonuses.length - 1);
+  while (tricks.length) removeTrick(tricks.length - 1);
+  obstacles.length = 0;
+  Object.assign(state, {
+    lane: 1, vy: 0, jumping: false, speed: 20,
+    distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
+    skillCharge: 0, skillT: 0,
+    slideT: 0, nextSpawn: 40, nextBonus: 70, nextTrick: 90,
+    running: true, paused: false, dead: false,
+  });
+  ui = 'playing';
+  // 清理上一局的技能特效
+  if (flameGroup) { scene.remove(flameGroup); flameGroup = null; }
+  for (const g of ghosts) scene.remove(g.mesh);
+  ghosts.length = 0;
+  updateSkillHud();
+  player.position.set(0, 0.45, 0);
+  player.scale.y = 1;
+  player.material.emissiveIntensity = 0;
+  bonusCountEl.textContent = 0;
+  overlay.classList.add('hidden');
+}
+
+function gameOver() {
+  state.running = false;
+  state.dead = true;
+  ui = 'over';
+  overlay.querySelector('h1').textContent = '游戏结束';
+  overlay.querySelector('div').textContent = `最终得分：${Math.floor(state.distance) + state.bonus}（粉色方块 ×${state.bonusCount}）`;
+  overlay.querySelector('small').textContent = '按任意键重新开始';
+  pauseBtns.classList.add('hidden'); // 结束界面不显示暂停按钮
+  overlay.classList.remove('hidden');
+}
+
+// ---------- 菜单界面管理 ----------
+const screens = {
+  menu: document.getElementById('menu'),
+  char: document.getElementById('charScreen'),
+  help: document.getElementById('helpScreen'),
+};
+let ui = 'menu'; // menu | char | help | playing | paused | over
+
+function showScreen(name) {
+  for (const k in screens) screens[k].classList.toggle('hidden', k !== name);
+  overlay.classList.add('hidden');
+  ui = name;
+}
+
+document.getElementById('btnStart').addEventListener('click', () => {
+  for (const k in screens) screens[k].classList.add('hidden');
+  startGame();
+});
+document.getElementById('btnChar').addEventListener('click', () => showScreen('char'));
+document.getElementById('btnHelp').addEventListener('click', () => showScreen('help'));
+for (const btn of document.querySelectorAll('.back')) {
+  btn.addEventListener('click', () => showScreen('menu'));
+}
+for (const btn of document.querySelectorAll('.char-btn')) {
+  btn.addEventListener('click', () => {
+    player.material.color.setHex(parseInt(btn.dataset.color));
+    state.char = btn.dataset.char; // 角色决定技能类型
+    document.querySelectorAll('.char-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+  });
+}
+
+function togglePause() {
+  if (!state.running) return;
+  state.paused = !state.paused;
+  ui = state.paused ? 'paused' : 'playing';
+  if (state.paused) {
+    overlay.querySelector('h1').textContent = '已暂停';
+    overlay.querySelector('div').textContent = `当前得分：${Math.floor(state.distance)}`;
+    overlay.querySelector('small').textContent = '按 Esc 或点击下方按钮继续';
+    pauseBtns.classList.remove('hidden');
+    overlay.classList.remove('hidden');
+  } else {
+    overlay.classList.add('hidden');
+    pauseBtns.classList.add('hidden');
+  }
+}
+
+document.getElementById('btnResume').addEventListener('click', () => togglePause());
+document.getElementById('btnMenu').addEventListener('click', () => {
+  // 结束本局并回主菜单
+  state.running = false;
+  state.paused = false;
+  overlay.classList.add('hidden');
+  pauseBtns.classList.add('hidden');
+  showScreen('menu');
+});
+
+// 按键状态跟踪（技巧方块需要检测"同时按住"）
+const keys = {};
+addEventListener('keyup', (e) => {
+  keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false;
+});
+
+addEventListener('keydown', (e) => {
+  keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true;
+  if (ui === 'menu' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
+  if (state.running && e.key === 'Escape') { togglePause(); return; }
+  if (!state.running) { startGame(); return; }
+  if (state.paused) return;
+  if ((e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) state.lane--;
+  if ((e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) state.lane++;
+  if (e.key === 'ArrowUp' && !state.jumping) {
+    state.jumping = true;
+    // 绿色技能期间：起跳更猛，更快到达最高点
+    state.vy = (state.skillT > 0 && state.char === 'green') ? 12 : 9;
+  }
+  // ↓ 滑铲冲刺：高度减半 0.8 秒，速度先冲后回落
+  if (e.key === 'ArrowDown' && state.slideT <= 0) {
+    state.slideT = 0.8;
+  }
+  // 绿色被动（无需开技能）：空中按 Z 迅速下降，控制落点
+  if ((e.key === 'z' || e.key === 'Z') && state.char === 'green' && state.jumping) {
+    state.vy = -18;
+  }
+  // V 释放技能：消耗 3 点充能
+  if ((e.key === 'v' || e.key === 'V') && state.skillT <= 0 && state.skillCharge >= 3) {
+    activateSkill();
+  }
+  // 空格：玩家中心进入粉色方块内部时按下，+100 分
+  if (e.key === ' ') {
+    for (let i = bonuses.length - 1; i >= 0; i--) {
+      const b = bonuses[i];
+      // 判定：横向保持 1.0（不跨道），上下/前后放宽到 1.35
+      const inside =
+        Math.abs(b.position.x - player.position.x) < 1.0 &&
+        Math.abs(b.position.y - player.position.y) < 1.35 &&
+        Math.abs(b.position.z - player.position.z) < 1.35;
+      if (inside) collectBonus(i);
+    }
+  }
+});
+
+// 鼠标点击：菜单界面忽略；结束界面点击重新开始（游戏中点击不再暂停）
+addEventListener('pointerdown', () => {
+  if (ui === 'menu' || ui === 'char' || ui === 'help') return;
+  if (!state.running && ui === 'over') startGame();
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- 主循环 ----------
+const clock = new THREE.Clock();
+function tick() {
+  requestAnimationFrame(tick);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (state.running && !state.paused) {
+    // 技能计时
+    if (state.skillT > 0) {
+      state.skillT -= dt;
+      if (state.skillT <= 0) endSkill();
+      else updateSkillHud();
+    }
+    const haste = state.skillT > 0 && state.char === 'green';      // 绿色技能：疾速
+    const invincible = state.skillT > 0 && state.char === 'red';   // 红色技能：无敌
+
+    // 滑铲计时与冲刺速度加成：0.1s 内提速到 1.5 倍，再 0.6s 内先快后慢衰减回 1 倍
+    let boost = 1;
+    if (state.slideT > 0) {
+      state.slideT -= dt * (haste ? 1.6 : 1); // 绿色技能：滑铲动作更快
+      const e = 0.8 - Math.max(state.slideT, 0); // 滑铲已进行的时间
+      if (e < 0.1) {
+        boost = 1 + 0.5 * (e / 0.1);
+      } else if (e < 0.7) {
+        const t = (e - 0.1) / 0.6;
+        boost = 1 + 0.5 * (1 - t) * (1 - t); // 平方衰减 = 先快后慢
+      }
+    }
+    const v = state.speed * boost; // 本帧实际前进速度
+
+    state.distance += v * dt;
+    state.speed = Math.min(state.speed + dt * 0.35, 35); // 逐渐加速，上限 35
+    scoreEl.textContent = Math.floor(state.distance) + state.bonus;
+    speedEl.textContent = v.toFixed(1);
+
+    // 移动地面线条，营造前进感
+    for (const dash of lines) {
+      dash.position.z += v * dt;
+      if (dash.position.z > 12) dash.position.z -= 160;
+    }
+
+    // 玩家换道（平滑过渡，绿色技能期间更快）与跳跃
+    player.position.x += (LANES[state.lane] - player.position.x) * Math.min(dt * (haste ? 22 : 10), 1);
+    if (state.jumping) {
+      // 绿色技能期间：上升重力大（更快到顶），下落重力小（滞空更长）
+      state.vy -= (haste ? (state.vy > 0 ? 40 : 10) : 25) * dt;
+      player.position.y += state.vy * dt;
+      const groundY = 0.45 * player.scale.y;
+      if (player.position.y <= groundY) {
+        player.position.y = groundY;
+        state.jumping = false;
+      }
+    }
+    // 滑铲：模型高度减半，0.8 秒后平滑复原
+    const targetScale = state.slideT > 0 ? 0.5 : 1;
+    player.scale.y += (targetScale - player.scale.y) * Math.min(dt * 12, 1);
+    if (!state.jumping) player.position.y = 0.45 * player.scale.y;
+    player.rotation.z = -(LANES[state.lane] - player.position.x) * 0.15;
+
+    // 连击计时：8 秒没吃到粉色方块就断连击
+    if (state.comboT > 0) {
+      state.comboT -= dt;
+      if (state.comboT <= 0) state.combo = 0;
+    }
+    // 拾取发光逐渐衰减
+    player.material.emissiveIntensity *= Math.max(1 - dt * 4, 0);
+
+    // 红色技能特效：火焰环绕玩家旋转
+    if (flameGroup) {
+      const t = performance.now() / 1000;
+      let i = 0;
+      for (const f of flameGroup.children) {
+        const a = f.userData.a + t * 6;
+        f.position.set(
+          player.position.x + Math.cos(a) * 0.85,
+          player.position.y + Math.sin(t * 9 + i) * 0.35,
+          player.position.z + Math.sin(a) * 0.85
+        );
+        f.scale.setScalar(0.8 + Math.sin(t * 13 + i * 2) * 0.3); // 火苗闪烁
+        i++;
+      }
+    }
+
+    // 绿色技能特效：移动时留下绿色残影
+    if (haste) {
+      ghostTimer -= dt;
+      if (ghostTimer <= 0) { spawnGhost(); ghostTimer = 0.06; }
+    }
+    for (let i = ghosts.length - 1; i >= 0; i--) {
+      const g = ghosts[i];
+      g.life -= dt;
+      g.mesh.material.opacity = Math.max(g.life / 0.4, 0) * 0.4;
+      if (g.life <= 0) { scene.remove(g.mesh); ghosts.splice(i, 1); }
+    }
+
+    // 生成障碍：难度随分数上升，间距随速度缩短
+    if (state.distance >= state.nextSpawn) {
+      const difficulty = state.distance > 800 ? 2 : state.distance > 300 ? 1 : 0;
+      spawnWave(-80, difficulty);
+      const gap = Math.max(26 - state.speed * 0.7, 10);
+      state.nextSpawn += gap + Math.random() * gap * 0.6;
+    }
+
+    // 生成粉色奖励方块：成功生成后，推后下一波障碍，留出吃方块的反应空间
+    if (state.distance >= state.nextBonus) {
+      if (spawnBonus(-80)) {
+        state.nextSpawn = Math.max(state.nextSpawn, state.distance + 18);
+      }
+      state.nextBonus += 90 + Math.random() * 70; // 生成间隔拉长，控制技能充能速度
+    }
+
+    // 生成技巧方块：约一半概率生成技巧链，否则单个方块
+    if (state.distance >= state.nextTrick) {
+      let chainLen = 0;
+      if (Math.random() < 0.55) chainLen = spawnChain(-85);
+      if (chainLen > 0) {
+        // 链覆盖范围内不再生成障碍和其它方块，保证能连上且不会必死
+        state.nextSpawn = Math.max(state.nextSpawn, state.distance + chainLen + 18);
+        state.nextBonus = Math.max(state.nextBonus, state.distance + chainLen + 18);
+        state.nextTrick += chainLen + 40 + Math.random() * 40;
+      } else {
+        if (spawnTrick(-85)) {
+          state.nextSpawn = Math.max(state.nextSpawn, state.distance + 14);
+        }
+        state.nextTrick += 70 + Math.random() * 70;
+      }
+    }
+
+    // 技巧方块移动 + 组合键触发判定
+    for (let i = tricks.length - 1; i >= 0; i--) {
+      const t = tricks[i];
+      const type = t.userData.type;
+      t.position.z += v * dt;
+      if (t.userData.shadow) t.userData.shadow.position.z = t.position.z;
+      const tail = type === 'white' ? t.userData.units * 0.45 : 0;
+      if (t.position.z - tail > 8) { removeTrick(i); continue; }
+
+      const dx = Math.abs(t.position.x - player.position.x);
+      const dy = Math.abs(t.position.y - player.position.y);
+
+      if (type === 'white') {
+        // 白色长条：接触时按住空格 = 滞空，每经过一个单位长度 +100 分
+        // 判定：横向保持，上下/前后放宽
+        const half = t.userData.units * 0.45;
+        const touching = dx < 0.7 && dy < 1.1 &&
+          Math.abs(t.position.z - player.position.z) < half + 0.9;
+        if (touching && keys[' ']) {
+          player.position.y = t.position.y; // 高度对齐白条
+          state.vy = 0;                     // 垂直速度清零 = 滞空
+          state.jumping = true;             // 保持空中状态，结束后再下落
+          t.userData.traveled += v * dt;
+          while (t.userData.paidUnits < t.userData.units &&
+                 t.userData.traveled >= (t.userData.paidUnits + 1) * 0.9) {
+            t.userData.paidUnits++;
+            state.bonus += 100;
+          }
+        }
+        continue;
+      }
+
+      // 普通技巧方块：接触时同时按住 空格 + 对应方向键，+500 并触发对应动作
+      // 判定：横向保持 0.95（不跨道），上下/前后放宽到 1.35
+      const touching = dx < 0.95 && dy < 1.35 && Math.abs(t.position.z - player.position.z) < 1.35;
+      if (!touching || !keys[' ']) continue;
+      if (type === 'green' && keys['ArrowUp']) {
+        state.bonus += 500;
+        state.jumping = true;
+        state.vy = haste ? 12 : 9; // 空中触发 = 二段跳
+        floatText(t.position, '+500');
+        removeTrick(i);
+      } else if (type === 'red' && (keys['ArrowLeft'] || keys['a'])) {
+        state.bonus += 500;
+        if (state.lane > 0) state.lane--;
+        floatText(t.position, '+500');
+        removeTrick(i);
+      } else if (type === 'blue' && (keys['ArrowRight'] || keys['d'])) {
+        state.bonus += 500;
+        if (state.lane < 2) state.lane++;
+        floatText(t.position, '+500');
+        removeTrick(i);
+      } else if (type === 'cyan' && keys['ArrowDown']) {
+        state.bonus += 500;
+        state.slideT = 0.8;
+        floatText(t.position, '+500');
+        removeTrick(i);
+      }
+    }
+
+    // 奖励方块随场景移动（影子同步），出界后移除
+    for (let i = bonuses.length - 1; i >= 0; i--) {
+      const b = bonuses[i];
+      b.position.z += v * dt;
+      b.rotation.y += dt * 2;
+      if (b.userData.shadow) b.userData.shadow.position.z = b.position.z;
+      if (b.position.z > 8) removeBonus(i);
+    }
+
+    // 障碍移动与碰撞检测
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const o = obstacles[i];
+      o.position.z += v * dt;
+      if (o.position.z > 8) {
+        scene.remove(o);
+        obstacles.splice(i, 1);
+        continue;
+      }
+      const hitX = Math.abs(o.position.x - player.position.x) < 1.0;
+      const hitZ = Math.abs(o.position.z - player.position.z) < 1.0;
+      // 垂直方向重叠才算撞上：用玩家当前实际身高（滑铲时减半）
+      const pHalf = 0.45 * player.scale.y;
+      const hitY = (player.position.y - pHalf) < o.userData.top &&
+                   (player.position.y + pHalf) > o.userData.bottom;
+      if (hitX && hitZ && hitY && !invincible) gameOver();
+    }
+  }
+
+  // 相机跟随
+  camera.position.set(player.position.x * 0.5, 4.2, 7);
+  camera.lookAt(player.position.x * 0.6, 1, -8);
+  renderer.render(scene, camera);
+}
+tick();
+</script>
+</body>
+</html>
