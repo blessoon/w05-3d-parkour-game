@@ -122,6 +122,14 @@
   <button id="btnHelp">玩法说明</button>
 </div>
 
+<!-- 教程选择 -->
+<div id="tutorialScreen" class="screen hidden">
+  <h1>玩法教程</h1>
+  <button id="btnBasicTutorial">基础方块教程</button>
+  <button id="btnComboTutorial">组合方块教程</button>
+  <button class="back">返回</button>
+</div>
+
 <!-- 角色选择 -->
 <div id="charScreen" class="screen hidden">
   <h1>角色选择</h1>
@@ -147,7 +155,7 @@
     ⬜白色长条：按住空格滞空滑行，每经过一单位长度 +100 分<br>
     技巧方块会成链出现（2~4 个），按箭头顺序连续操作即可全部接上，链内不会有障碍<br>
     粉色方块会出现在障碍波的"活路"上：地面的粉块提示安全道/滑铲道，空中的粉块提示跳跃道<br>
-    主菜单的“玩法教程”会按顺序讲解所有基础方块，教学速度固定为 28
+    主菜单的“玩法教程”含基础方块教程与组合方块教程；教学速度固定为 28
   </div>
   <button class="back">返回</button>
 </div>
@@ -603,8 +611,9 @@ const tutorialLessons = [
   { key: 'white', label: '悬浮方柱', instruction: '接触时按住 Space 键直至方柱结束', rows: ['2(3)','1(3)','3(3)','2(6)','2(10)'] },
 ];
 const tutorial = {
-  active: false, lessonIndex: -1, phase: 'idle', phaseT: 0,
+  active: false, mode: 'basic', lessonIndex: -1, phase: 'idle', phaseT: 0,
   rowIndex: 0, rowT: 0, promptT: 0, lockCenter: true,
+  comboIndex: 0, comboFailures: 0, comboSpawned: false,
 };
 const tutorialPrompt = document.getElementById('tutorialPrompt');
 
@@ -711,6 +720,7 @@ function spawnTutorialRow(lesson, row) {
 function tutorialAdvance() {
   const lesson = tutorialLessons[tutorial.lessonIndex];
   switch (tutorial.phase) {
+    case 'welcome': tutorialStartLesson(0); break;
     case 'category': tutorialSetPhase('gapBeforeDisplay', 2); break;
     case 'gapBeforeDisplay': tutorialSetPhase('display', 4, `这是${lesson.label}`); break;
     case 'display': tutorialSetPhase('gapAfterDisplay', 2); break;
@@ -732,7 +742,7 @@ function tutorialAdvance() {
   }
 }
 
-function startTutorial() {
+function startBasicTutorial() {
   ensureAudio();
   sfx('click');
   clearTutorialObjects();
@@ -743,6 +753,7 @@ function startTutorial() {
     running: true, paused: false, dead: false, tutorial: true,
   });
   tutorial.active = true;
+  tutorial.mode = 'basic';
   tutorialPromptText('', 0);
   for (const k in screens) screens[k].classList.add('hidden');
   ui = 'tutorial';
@@ -754,11 +765,176 @@ function startTutorial() {
   player.scale.y = 1;
   player.material.emissiveIntensity = 0;
   bonusCountEl.textContent = 0;
-  tutorialStartLesson(0);
+  tutorialSetPhase('welcome', 4, '欢迎来到基础方块教程');
+}
+
+// ---------- 组合方块教学 ----------
+// 所有组合均不含粉色方块，按可连续操作且可存活的路径布置。
+const comboLessons = [
+  {
+    title: '二段跳越过高墙',
+    steps: [
+      { k: 'trick', type: 'green', lane: 1, y: 0.45, z: -58 },
+      { k: 'trick', type: 'green', lane: 1, y: 1.5, z: -69 },
+      { k: 'obstacle', type: 'tall', lane: 1, z: -81 },
+    ],
+  },
+  {
+    title: '右移接滑铲',
+    steps: [
+      { k: 'trick', type: 'blue', lane: 1, y: 0.45, z: -58 },
+      { k: 'obstacle', type: 'tall', lane: 1, z: -70 },
+      { k: 'trick', type: 'cyan', lane: 2, y: 0.45, z: -75 },
+      { k: 'obstacle', type: 'over', lane: 2, z: -82 },
+    ],
+  },
+  {
+    title: '跳跃接悬浮方柱',
+    steps: [
+      { k: 'trick', type: 'green', lane: 1, y: 0.45, z: -58 },
+      { k: 'white', lane: 1, units: 5, z: -72 },
+      { k: 'trick', type: 'green', lane: 1, y: 1.5, z: -79 },
+      { k: 'obstacle', type: 'low', lane: 1, z: -91 },
+    ],
+  },
+  {
+    title: '左移接二段跳',
+    steps: [
+      { k: 'trick', type: 'red', lane: 1, y: 0.45, z: -58 },
+      { k: 'obstacle', type: 'tall', lane: 1, z: -70 },
+      { k: 'trick', type: 'green', lane: 0, y: 0.45, z: -76 },
+      { k: 'trick', type: 'green', lane: 0, y: 1.5, z: -87 },
+      { k: 'obstacle', type: 'tall', lane: 0, z: -99 },
+    ],
+  },
+];
+
+function resetTutorialPlayer() {
+  state.lane = 1;
+  state.vy = 0;
+  state.jumping = false;
+  state.slideT = 0;
+  player.position.set(0, 0.45, 0);
+  player.scale.y = 1;
+}
+
+function comboSetPhase(phase, seconds, text = '') {
+  tutorial.phase = phase;
+  tutorial.phaseT = seconds;
+  tutorial.lockCenter = phase !== 'comboRun';
+  tutorialPromptText(text, text ? seconds : 0);
+  if (phase !== 'comboRun') clearTutorialObjects();
+}
+
+function spawnComboLesson() {
+  clearTutorialObjects();
+  const lesson = comboLessons[tutorial.comboIndex];
+  if (!lesson) return;
+  for (const step of lesson.steps) {
+    if (step.k === 'obstacle') {
+      spawnObstacle(step.z, step.lane, step.type);
+      obstacles[obstacles.length - 1].userData.combo = true;
+    } else if (step.k === 'trick') {
+      addTrickCube(step.type, step.lane, step.y, step.z);
+      tricks[tricks.length - 1].userData.combo = true;
+    } else if (step.k === 'white') {
+      addWhiteBar(step.lane, step.z, step.units);
+      tricks[tricks.length - 1].userData.combo = true;
+    }
+  }
+  tutorial.comboSpawned = true;
+}
+
+function comboStartAttempt() {
+  resetTutorialPlayer();
+  tutorial.comboSpawned = false;
+  comboSetPhase('comboRun', 12);
+  spawnComboLesson();
+}
+
+function comboNextLesson() {
+  tutorial.comboIndex++;
+  tutorial.comboFailures = 0;
+  if (tutorial.comboIndex >= comboLessons.length) {
+    comboSetPhase('comboFinal', 5, '恭喜你完成了组合方块教学');
+  } else {
+    comboSetPhase('comboIntroduce', 3, `下一组：${comboLessons[tutorial.comboIndex].title}`);
+  }
+}
+
+function comboFail() {
+  if (!tutorial.active || tutorial.mode !== 'combo' || tutorial.phase !== 'comboRun') return;
+  tutorial.comboFailures++;
+  clearTutorialObjects(); // 穿过障碍：不结算普通失败，清除当前组合并在前方重新布置
+  if (tutorial.comboFailures >= 3) {
+    comboSetPhase('comboEncourage', 3, '别灰心，我们继续教学');
+  } else {
+    comboSetPhase('comboRetry', 2, `再试一次（${tutorial.comboFailures}/3）`);
+  }
+}
+
+function updateComboTutorial(dt) {
+  tutorial.phaseT -= dt;
+  if (tutorial.promptT > 0) {
+    tutorial.promptT -= dt;
+    if (tutorial.promptT < 1) tutorialPrompt.style.opacity = String(Math.max(tutorial.promptT, 0));
+    if (tutorial.promptT <= 0) tutorialPrompt.classList.remove('visible');
+  }
+  if (tutorial.phase === 'comboRun' && tutorial.comboSpawned && obstacles.length === 0 && tricks.length === 0) {
+    tutorial.comboSpawned = false;
+    comboSetPhase('comboGap', 2, '组合通过！');
+  }
+  if (tutorial.phaseT > 0) return;
+  switch (tutorial.phase) {
+    case 'comboWelcome':
+      comboSetPhase('comboShowWall', 1, '这是橙黄色高墙');
+      // 两侧仅用于展示，玩家仍在中间道。
+      spawnObstacle(-72, 0, 'tall');
+      spawnObstacle(-72, 2, 'tall');
+      break;
+    case 'comboShowWall': comboSetPhase('comboQuestion', 1, '你会绕过它，对吗？'); break;
+    case 'comboQuestion': comboSetPhase('comboSetup', 1, '那如果是这样呢？'); break;
+    case 'comboSetup': comboStartAttempt(); break;
+    case 'comboIntroduce': comboStartAttempt(); break;
+    case 'comboRetry': comboStartAttempt(); break;
+    case 'comboEncourage': comboNextLesson(); break;
+    case 'comboGap': comboNextLesson(); break;
+    case 'comboFinal':
+      tutorial.active = false;
+      state.tutorial = false;
+      state.running = false;
+      tutorialPromptText('', 0);
+      showScreen('menu');
+      break;
+  }
+}
+
+function startComboTutorial() {
+  ensureAudio();
+  sfx('click');
+  clearTutorialObjects();
+  Object.assign(state, {
+    lane: 1, vy: 0, jumping: false, speed: 28,
+    distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
+    skillCharge: 0, skillT: 0, slideT: 0,
+    running: true, paused: false, dead: false, tutorial: true,
+  });
+  tutorial.active = true;
+  tutorial.mode = 'combo';
+  tutorial.comboIndex = 0;
+  tutorial.comboFailures = 0;
+  tutorial.comboSpawned = false;
+  for (const k in screens) screens[k].classList.add('hidden');
+  ui = 'tutorial';
+  resetTutorialPlayer();
+  updateSkillHud();
+  bonusCountEl.textContent = 0;
+  comboSetPhase('comboWelcome', 4, '欢迎来到组合方块教程');
 }
 
 function updateTutorial(dt) {
   if (!tutorial.active) return;
+  if (tutorial.mode === 'combo') { updateComboTutorial(dt); return; }
   tutorial.phaseT -= dt;
   if (tutorial.promptT > 0) {
     tutorial.promptT -= dt;
@@ -924,6 +1100,7 @@ function gameOver() {
 // ---------- 菜单界面管理 ----------
 const screens = {
   menu: document.getElementById('menu'),
+  tutorial: document.getElementById('tutorialScreen'),
   char: document.getElementById('charScreen'),
   help: document.getElementById('helpScreen'),
 };
@@ -940,7 +1117,9 @@ document.getElementById('btnStart').addEventListener('click', () => {
   for (const k in screens) screens[k].classList.add('hidden');
   startGame();
 });
-document.getElementById('btnTutorial').addEventListener('click', () => startTutorial());
+document.getElementById('btnTutorial').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('tutorial'); });
+document.getElementById('btnBasicTutorial').addEventListener('click', () => startBasicTutorial());
+document.getElementById('btnComboTutorial').addEventListener('click', () => startComboTutorial());
 document.getElementById('btnChar').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('char'); });
 document.getElementById('btnHelp').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('help'); });
 for (const btn of document.querySelectorAll('.back')) {
@@ -994,7 +1173,7 @@ addEventListener('keyup', (e) => {
 
 addEventListener('keydown', (e) => {
   keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true;
-  if (ui === 'menu' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
+  if (ui === 'menu' || ui === 'tutorial' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
   if (state.running && e.key === 'Escape') { togglePause(); return; }
   if (!state.running) { startGame(); return; }
   if (state.paused) return;
@@ -1262,7 +1441,10 @@ function tick() {
       const pHalf = 0.45 * player.scale.y;
       const hitY = (player.position.y - pHalf) < o.userData.top &&
                    (player.position.y + pHalf) > o.userData.bottom;
-      if (hitX && hitZ && hitY && !invincible && !state.tutorial) gameOver();
+      if (hitX && hitZ && hitY && !invincible) {
+        if (state.tutorial && tutorial.mode === 'combo' && o.userData.combo) comboFail();
+        else if (!state.tutorial) gameOver();
+      }
     }
   }
 
