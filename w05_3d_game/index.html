@@ -33,10 +33,18 @@
   }
   #pauseBtns button:hover { background: #2d4479; }
   #bonusCounter {
-    position: fixed; top: 12px; right: 16px;
+    position: fixed; top: 64px; right: 16px;
     color: #ff66cc; font: bold 32px/1.2 var(--pink-font);
     pointer-events: none; text-shadow: 0 1px 4px #000;
   }
+  /* 音量 / 静音开关（右上角） */
+  #muteBtn {
+    position: fixed; top: 12px; right: 16px; z-index: 30;
+    width: 44px; height: 44px; border-radius: 10px; cursor: pointer;
+    border: 2px solid #3d5aa0; background: #22335c; color: #fff;
+    font: 22px system-ui, sans-serif; pointer-events: auto;
+  }
+  #muteBtn:hover { background: #2d4479; }
   /* 拾取粉色方块的全屏闪光 */
   #flash {
     position: fixed; inset: 0; pointer-events: none; opacity: 0;
@@ -91,6 +99,7 @@
 <div id="hud">得分：<span id="score">0</span>　速度：<span id="speed">0</span></div>
 <div id="skillHud">技能充能：0/3</div>
 <div id="bonusCounter">🩷 <span id="bonusCount">0</span></div>
+<button id="muteBtn" aria-label="静音开关">🔊</button>
 <div id="flash"></div>
 
 <!-- 主菜单 -->
@@ -461,6 +470,7 @@ function activateSkill() {
   state.skillCharge -= 3;
   state.skillT = state.char === 'red' ? 8 : 15;
   if (state.char === 'red') startFlames();
+  sfx('skill');
   updateSkillHud();
 }
 
@@ -574,6 +584,63 @@ const flashEl = document.getElementById('flash');
 const skillHudEl = document.getElementById('skillHud');
 const pauseBtns = document.getElementById('pauseBtns');
 
+// ---------- 音效（Web Audio 程序合成，无外部音频素材）----------
+let audioCtx = null, masterGain = null;
+let muted = false;
+try { muted = localStorage.getItem('w05_muted') === '1'; } catch (e) {}
+
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : 0.5;
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function tone(freq, dur, type = 'sine', vol = 0.2, slideTo = null, delay = 0) {
+  if (!audioCtx || !masterGain || muted) return;
+  const t0 = audioCtx.currentTime + delay;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g); g.connect(masterGain);
+  osc.start(t0); osc.stop(t0 + dur + 0.05);
+}
+
+function sfx(name) {
+  if (!audioCtx || muted) return;
+  switch (name) {
+    case 'click':  tone(700, 0.06, 'square', 0.12); break;
+    case 'move':   tone(320, 0.06, 'triangle', 0.1); break;
+    case 'jump':   tone(380, 0.14, 'sine', 0.2, 720); break;
+    case 'bonus':  tone(660, 0.12, 'sine', 0.22); tone(880, 0.14, 'sine', 0.22, null, 0.09); break;
+    case 'trick':  tone(880, 0.16, 'square', 0.18, 1320); break;
+    case 'skill':  tone(220, 0.35, 'sawtooth', 0.18, 880); break;
+    case 'crash':  tone(160, 0.4, 'sawtooth', 0.28, 60); break;
+  }
+}
+
+const muteBtn = document.getElementById('muteBtn');
+function renderMute() { muteBtn.textContent = muted ? '🔇' : '🔊'; }
+muteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  ensureAudio();
+  muted = !muted;
+  try { localStorage.setItem('w05_muted', muted ? '1' : '0'); } catch (err) {}
+  if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+  renderMute();
+});
+renderMute();
+
 // 在3D位置飘出得分文字
 function floatText(worldPos, text) {
   const p = worldPos.clone().project(camera);
@@ -613,6 +680,7 @@ function collectBonus(i) {
   player.material.emissive.setHex(0xff66cc);
   player.material.emissiveIntensity = 0.8;
 
+  sfx('bonus');
   removeBonus(i);
 }
 
@@ -645,6 +713,7 @@ function gameOver() {
   state.running = false;
   state.dead = true;
   ui = 'over';
+  sfx('crash');
   overlay.querySelector('h1').textContent = '游戏结束';
   overlay.querySelector('div').textContent = `最终得分：${Math.floor(state.distance) + state.bonus}（粉色方块 ×${state.bonusCount}）`;
   overlay.querySelector('small').textContent = '按任意键重新开始';
@@ -667,16 +736,18 @@ function showScreen(name) {
 }
 
 document.getElementById('btnStart').addEventListener('click', () => {
+  ensureAudio(); sfx('click');
   for (const k in screens) screens[k].classList.add('hidden');
   startGame();
 });
-document.getElementById('btnChar').addEventListener('click', () => showScreen('char'));
-document.getElementById('btnHelp').addEventListener('click', () => showScreen('help'));
+document.getElementById('btnChar').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('char'); });
+document.getElementById('btnHelp').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('help'); });
 for (const btn of document.querySelectorAll('.back')) {
-  btn.addEventListener('click', () => showScreen('menu'));
+  btn.addEventListener('click', () => { sfx('click'); showScreen('menu'); });
 }
 for (const btn of document.querySelectorAll('.char-btn')) {
   btn.addEventListener('click', () => {
+    sfx('click');
     player.material.color.setHex(parseInt(btn.dataset.color));
     state.char = btn.dataset.char; // 角色决定技能类型
     document.querySelectorAll('.char-btn').forEach(b => b.classList.remove('selected'));
@@ -722,10 +793,11 @@ addEventListener('keydown', (e) => {
   if (state.running && e.key === 'Escape') { togglePause(); return; }
   if (!state.running) { startGame(); return; }
   if (state.paused) return;
-  if ((e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) state.lane--;
-  if ((e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) state.lane++;
+  if ((e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
+  if ((e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
   if (e.key === 'ArrowUp' && !state.jumping) {
     state.jumping = true;
+    sfx('jump');
     // 绿色技能期间：起跳更猛，更快到达最高点
     state.vy = (state.skillT > 0 && state.char === 'green') ? 12 : 9;
   }
@@ -936,21 +1008,25 @@ function tick() {
         state.jumping = true;
         state.vy = haste ? 12 : 9; // 空中触发 = 二段跳
         floatText(t.position, '+500');
+        sfx('trick');
         removeTrick(i);
       } else if (type === 'red' && (keys['ArrowLeft'] || keys['a'])) {
         state.bonus += 500;
         if (state.lane > 0) state.lane--;
         floatText(t.position, '+500');
+        sfx('trick');
         removeTrick(i);
       } else if (type === 'blue' && (keys['ArrowRight'] || keys['d'])) {
         state.bonus += 500;
         if (state.lane < 2) state.lane++;
         floatText(t.position, '+500');
+        sfx('trick');
         removeTrick(i);
       } else if (type === 'cyan' && keys['ArrowDown']) {
         state.bonus += 500;
         state.slideT = 0.8;
         floatText(t.position, '+500');
+        sfx('trick');
         removeTrick(i);
       }
     }
