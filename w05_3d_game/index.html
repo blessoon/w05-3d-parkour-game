@@ -875,6 +875,7 @@ function comboFail() {
 
 function updateComboTutorial(dt) {
   tutorial.phaseT -= dt;
+  for (const key in tutorialInput) tutorialInput[key] = Math.max(0, tutorialInput[key] - dt);
   if (tutorial.promptT > 0) {
     tutorial.promptT -= dt;
     if (tutorial.promptT < 1) tutorialPrompt.style.opacity = String(Math.max(tutorial.promptT, 0));
@@ -1167,12 +1168,20 @@ document.getElementById('btnMenu').addEventListener('click', () => {
 
 // 按键状态跟踪（技巧方块需要检测"同时按住"）
 const keys = {};
+// 组合教程的教学宽容输入：方向键按下后保留短暂窗口，避免玩家必须精确长按。
+const tutorialInput = { up: 0, down: 0, left: 0, right: 0 };
 addEventListener('keyup', (e) => {
   keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false;
 });
 
 addEventListener('keydown', (e) => {
   keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true;
+  if (state.tutorial && tutorial.mode === 'combo') {
+    if (e.key === 'ArrowUp') tutorialInput.up = 0.7;
+    if (e.key === 'ArrowDown') tutorialInput.down = 0.7;
+    if (e.key === 'ArrowLeft' || e.key === 'a') tutorialInput.left = 0.7;
+    if (e.key === 'ArrowRight' || e.key === 'd') tutorialInput.right = 0.7;
+  }
   if (ui === 'menu' || ui === 'tutorial' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
   if (state.running && e.key === 'Escape') { togglePause(); return; }
   if (!state.running) { startGame(); return; }
@@ -1369,8 +1378,9 @@ function tick() {
         // 白色长条：接触时按住空格 = 滞空，每经过一个单位长度 +100 分
         // 判定：横向保持，上下/前后放宽
         const half = t.userData.units * 0.45;
-        const touching = dx < 0.7 && dy < 1.1 &&
-          Math.abs(t.position.z - player.position.z) < half + 0.9;
+        const comboAssist = state.tutorial && tutorial.mode === 'combo';
+        const touching = dx < (comboAssist ? 1.0 : 0.7) && dy < (comboAssist ? 1.45 : 1.1) &&
+          Math.abs(t.position.z - player.position.z) < half + (comboAssist ? 1.35 : 0.9);
         if (touching && keys[' ']) {
           player.position.y = t.position.y; // 高度对齐白条
           state.vy = 0;                     // 垂直速度清零 = 滞空
@@ -1385,30 +1395,32 @@ function tick() {
         continue;
       }
 
-      // 普通技巧方块：接触时同时按住 空格 + 对应方向键，+500 并触发对应动作
-      // 判定：横向保持 0.95（不跨道），上下/前后放宽到 1.35
-      const touching = dx < 0.95 && dy < 1.35 && Math.abs(t.position.z - player.position.z) < 1.35;
-      if (!touching || !keys[' ']) continue;
-      if (type === 'green' && keys['ArrowUp']) {
+      // 正式游戏/基础教程：空格 + 对应方向键；组合教程提供更宽判定与方向键教学辅助
+      const comboAssist = state.tutorial && tutorial.mode === 'combo';
+      const touching = dx < (comboAssist ? 1.15 : 0.95) &&
+        dy < (comboAssist ? 1.75 : 1.35) &&
+        Math.abs(t.position.z - player.position.z) < (comboAssist ? 2.4 : 1.35);
+      if (!touching || (!keys[' '] && !comboAssist)) continue;
+      if (type === 'green' && (keys['ArrowUp'] || (comboAssist && tutorialInput.up > 0))) {
         state.bonus += 500;
         state.jumping = true;
         state.vy = haste ? 12 : 9; // 空中触发 = 二段跳
         floatText(t.position, '+500');
         sfx('trick');
         removeTrick(i);
-      } else if (type === 'red' && (keys['ArrowLeft'] || keys['a'])) {
+      } else if (type === 'red' && (keys['ArrowLeft'] || keys['a'] || (comboAssist && tutorialInput.left > 0))) {
         state.bonus += 500;
         if (state.lane > 0) state.lane--;
         floatText(t.position, '+500');
         sfx('trick');
         removeTrick(i);
-      } else if (type === 'blue' && (keys['ArrowRight'] || keys['d'])) {
+      } else if (type === 'blue' && (keys['ArrowRight'] || keys['d'] || (comboAssist && tutorialInput.right > 0))) {
         state.bonus += 500;
         if (state.lane < 2) state.lane++;
         floatText(t.position, '+500');
         sfx('trick');
         removeTrick(i);
-      } else if (type === 'cyan' && keys['ArrowDown']) {
+      } else if (type === 'cyan' && (keys['ArrowDown'] || (comboAssist && tutorialInput.down > 0))) {
         state.bonus += 500;
         state.slideT = 0.8;
         floatText(t.position, '+500');
