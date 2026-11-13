@@ -90,6 +90,16 @@
   .char-btn { width: 140px; height: 80px; min-width: 0 !important; font-size: 26px !important; }
   .char-btn.selected { border-color: #fff; box-shadow: 0 0 12px #fff; }
   #helpScreen div { line-height: 2; text-align: center; }
+  /* 基础方块教学提示：淡入、停留、淡出 */
+  #tutorialPrompt {
+    position: fixed; left: 50%; top: 43%; z-index: 25;
+    width: min(90vw, 900px); transform: translate(-50%, -50%);
+    color: #fff; text-align: center; pointer-events: none;
+    font: bold clamp(28px, 4vw, 58px)/1.35 system-ui, sans-serif;
+    text-shadow: 0 3px 14px #000, 0 0 24px rgba(120,180,255,.75);
+    opacity: 0; transition: opacity 1s ease;
+  }
+  #tutorialPrompt.visible { opacity: 1; }
 </style>
 <script type="importmap">
 { "imports": { "three": "./lib/three.module.js" } }
@@ -101,11 +111,13 @@
 <div id="bonusCounter">🩷 <span id="bonusCount">0</span></div>
 <button id="muteBtn" aria-label="静音开关">🔊</button>
 <div id="flash"></div>
+<div id="tutorialPrompt" aria-live="polite"></div>
 
 <!-- 主菜单 -->
 <div id="menu" class="screen">
   <h1>3D 跑酷</h1>
   <button id="btnStart">开始游戏</button>
+  <button id="btnTutorial">玩法教程</button>
   <button id="btnChar">角色选择</button>
   <button id="btnHelp">玩法说明</button>
 </div>
@@ -134,7 +146,8 @@
     技巧方块（接触时按住组合键触发）：🟩空格+↑二段跳　🟥空格+←左移　🟦空格+→右移　🩵空格+↓滑铲，各 +500 分<br>
     ⬜白色长条：按住空格滞空滑行，每经过一单位长度 +100 分<br>
     技巧方块会成链出现（2~4 个），按箭头顺序连续操作即可全部接上，链内不会有障碍<br>
-    粉色方块会出现在障碍波的"活路"上：地面的粉块提示安全道/滑铲道，空中的粉块提示跳跃道
+    粉色方块会出现在障碍波的"活路"上：地面的粉块提示安全道/滑铲道，空中的粉块提示跳跃道<br>
+    主菜单的“玩法教程”会按顺序讲解所有基础方块，教学速度固定为 28
   </div>
   <button class="back">返回</button>
 </div>
@@ -574,7 +587,194 @@ const state = {
   running: false,
   paused: false,
   dead: false,
+  tutorial: false,
 };
+
+// ---------- 基础方块教学 ----------
+// 每个 lesson 都按：展示 4 秒 → 空档 4 秒 → 玩法提示 5 秒 → 练习 → 空档 4 秒
+const tutorialLessons = [
+  { key: 'tall', label: '橙黄色高墙', instruction: '切换跑道绕过它', rows: ['2','1','3','2','1','2','3','23','12','23','12'] },
+  { key: 'low', label: '蓝色矮墙', instruction: '你可以越过它', rows: ['12','23','12','23','123','123','123'] },
+  { key: 'over', label: '紫色悬墙', instruction: '滑铲时好像会降低你的高度哦', rows: ['12','23','12','23','123','123','123'] },
+  { key: 'bonus', label: '粉色方块（能量方块）', instruction: '接触时按下空格键，攒满三个可释放技能', rows: ['2','1','3','2','2','1','3'] },
+  { key: 'move', label: '左右方块', instruction: '接触时同时按下 ← / → 和 Space 键', rows: ['2左','1右','3左','1右','3左','1右','3左','1右','3左','1右'] },
+  { key: 'jump', label: '跳跃方块', instruction: '接触时同时按下 ↑ 和 Space 键', rows: ['2','2','1','3','2','2空','2','2空','2','2空','2','2空'] },
+  { key: 'slide', label: '滑铲方块', instruction: '接触时同时按下 ↓ 和 Space 键', rows: ['2','1','2','3','2','2空','2空','2空'] },
+  { key: 'white', label: '悬浮方柱', instruction: '接触时按住 Space 键直至方柱结束', rows: ['2(3)','1(3)','3(3)','2(6)','2(10)'] },
+];
+const tutorial = {
+  active: false, lessonIndex: -1, phase: 'idle', phaseT: 0,
+  rowIndex: 0, rowT: 0, promptT: 0, lockCenter: true,
+};
+const tutorialPrompt = document.getElementById('tutorialPrompt');
+
+function clearTutorialObjects() {
+  for (const o of obstacles) scene.remove(o);
+  obstacles.length = 0;
+  while (bonuses.length) removeBonus(bonuses.length - 1);
+  while (tricks.length) removeTrick(tricks.length - 1);
+}
+
+function tutorialPromptText(text, seconds) {
+  tutorialPrompt.textContent = text;
+  tutorialPrompt.classList.toggle('visible', Boolean(text));
+  tutorialPrompt.style.opacity = text ? '1' : '0';
+  tutorial.promptT = seconds;
+}
+
+function tutorialSetPhase(phase, seconds, text = '') {
+  tutorial.phase = phase;
+  tutorial.phaseT = seconds;
+  tutorial.lockCenter = phase !== 'practice';
+  tutorialPromptText(text, text ? seconds : 0);
+  clearTutorialObjects();
+  if (phase === 'display') spawnTutorialDisplay(tutorialLessons[tutorial.lessonIndex]);
+  if (phase === 'practice') {
+    tutorial.rowIndex = 0;
+    tutorial.rowT = 0;
+  }
+}
+
+function tutorialStartLesson(index) {
+  tutorial.lessonIndex = index;
+  const lesson = tutorialLessons[index];
+  if (!lesson) {
+    tutorialSetPhase('final', 5, '恭喜你完成了基础方块教学');
+    return;
+  }
+  if (index === 0) {
+    tutorialSetPhase('category', 4, '以下是障碍方块');
+  } else if (index === 3) {
+    tutorialSetPhase('category', 4, '以下是奖励方块');
+  } else {
+    tutorialSetPhase('gapBeforeDisplay', 4);
+  }
+}
+
+function tutorialDisplayObject(lesson, lane, z, y = 0.45) {
+  if (lesson.key === 'tall' || lesson.key === 'low' || lesson.key === 'over') {
+    spawnObstacle(z, lane, lesson.key);
+  } else if (lesson.key === 'bonus') {
+    spawnBonusAt(z, lane, y);
+  } else if (lesson.key === 'move') {
+    addTrickCube(lane === 0 ? 'blue' : 'red', lane, 0.45, z);
+  } else if (lesson.key === 'jump') {
+    addTrickCube('green', lane, 1.5, z);
+  } else if (lesson.key === 'slide') {
+    addTrickCube('cyan', lane, 0.45, z);
+  } else if (lesson.key === 'white') {
+    addWhiteBar(lane, z, 4);
+  }
+}
+
+function spawnTutorialDisplay(lesson) {
+  // 展示只占 1、3 道，玩家锁定在 2 道；左右方块按要求分别展示右移/左移。
+  if (lesson.key === 'move') {
+    tutorialDisplayObject(lesson, 0, -72);
+    tutorialDisplayObject(lesson, 2, -100);
+  } else {
+    tutorialDisplayObject(lesson, 0, -72, lesson.key === 'bonus' ? 1.5 : 0.45);
+    tutorialDisplayObject(lesson, 2, -100, lesson.key === 'bonus' ? 0.45 : 0.45);
+  }
+}
+
+function tutorialLaneFromChar(ch) { return Number(ch) - 1; }
+
+function spawnTutorialRow(lesson, row) {
+  if (lesson.key === 'tall' || lesson.key === 'low' || lesson.key === 'over') {
+    for (const ch of row) spawnObstacle(-90, tutorialLaneFromChar(ch), lesson.key);
+    return;
+  }
+  if (lesson.key === 'bonus') {
+    const lane = tutorialLaneFromChar(row[0]);
+    // 能量方块练习采用地面/空中交替，练习按空格拾取即可。
+    spawnBonusAt(-90, lane, tutorial.rowIndex % 2 ? 1.5 : 0.45);
+    return;
+  }
+  if (lesson.key === 'move') {
+    const lane = tutorialLaneFromChar(row[0]);
+    addTrickCube(row.endsWith('左') ? 'red' : 'blue', lane, 0.45, -90);
+    return;
+  }
+  if (lesson.key === 'jump' || lesson.key === 'slide') {
+    const air = row.endsWith('空');
+    const lane = tutorialLaneFromChar(row[0]);
+    addTrickCube(lesson.key === 'jump' ? 'green' : 'cyan', lane, air ? 1.5 : 0.45, -90);
+    return;
+  }
+  if (lesson.key === 'white') {
+    const match = row.match(/^(\d+)\((\d+)\)$/);
+    if (match) addWhiteBar(tutorialLaneFromChar(match[1]), -90, Number(match[2]));
+  }
+}
+
+function tutorialAdvance() {
+  const lesson = tutorialLessons[tutorial.lessonIndex];
+  switch (tutorial.phase) {
+    case 'category': tutorialSetPhase('gapBeforeDisplay', 4); break;
+    case 'gapBeforeDisplay': tutorialSetPhase('display', 4, `这是${lesson.label}`); break;
+    case 'display': tutorialSetPhase('gapAfterDisplay', 4); break;
+    case 'gapAfterDisplay': tutorialSetPhase('instruction', 5, lesson.instruction); break;
+    case 'instruction': {
+      const practiceSeconds = tutorialLessons[tutorial.lessonIndex].rows.length * 0.95 + 4;
+      tutorialSetPhase('practice', practiceSeconds);
+      break;
+    }
+    case 'practice': tutorialSetPhase('gapAfterPractice', 4); break;
+    case 'gapAfterPractice': tutorialStartLesson(tutorial.lessonIndex + 1); break;
+    case 'final':
+      tutorial.active = false;
+      state.tutorial = false;
+      state.running = false;
+      tutorialPromptText('', 0);
+      showScreen('menu');
+      break;
+  }
+}
+
+function startTutorial() {
+  ensureAudio();
+  sfx('click');
+  clearTutorialObjects();
+  Object.assign(state, {
+    lane: 1, vy: 0, jumping: false, speed: 28,
+    distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
+    skillCharge: 0, skillT: 0, slideT: 0,
+    running: true, paused: false, dead: false, tutorial: true,
+  });
+  tutorial.active = true;
+  tutorialPromptText('', 0);
+  for (const k in screens) screens[k].classList.add('hidden');
+  ui = 'tutorial';
+  if (flameGroup) { scene.remove(flameGroup); flameGroup = null; }
+  for (const g of ghosts) scene.remove(g.mesh);
+  ghosts.length = 0;
+  updateSkillHud();
+  player.position.set(0, 0.45, 0);
+  player.scale.y = 1;
+  player.material.emissiveIntensity = 0;
+  bonusCountEl.textContent = 0;
+  tutorialStartLesson(0);
+}
+
+function updateTutorial(dt) {
+  if (!tutorial.active) return;
+  tutorial.phaseT -= dt;
+  if (tutorial.promptT > 0) {
+    tutorial.promptT -= dt;
+    if (tutorial.promptT < 1) tutorialPrompt.style.opacity = String(Math.max(tutorial.promptT, 0));
+    if (tutorial.promptT <= 0) tutorialPrompt.classList.remove('visible');
+  }
+  if (tutorial.phase === 'practice') {
+    tutorial.rowT -= dt;
+    if (tutorial.rowIndex < tutorialLessons[tutorial.lessonIndex].rows.length && tutorial.rowT <= 0) {
+      spawnTutorialRow(tutorialLessons[tutorial.lessonIndex], tutorialLessons[tutorial.lessonIndex].rows[tutorial.rowIndex]);
+      tutorial.rowIndex++;
+      tutorial.rowT = 0.95;
+    }
+  }
+  if (tutorial.phaseT <= 0) tutorialAdvance();
+}
 
 const overlay = document.getElementById('overlay');
 const scoreEl = document.getElementById('score');
@@ -694,7 +894,7 @@ function startGame() {
     distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
     skillCharge: 0, skillT: 0,
     slideT: 0, nextSpawn: 40, nextBonus: 70, nextTrick: 90,
-    running: true, paused: false, dead: false,
+    running: true, paused: false, dead: false, tutorial: false,
   });
   ui = 'playing';
   // 清理上一局的技能特效
@@ -740,6 +940,7 @@ document.getElementById('btnStart').addEventListener('click', () => {
   for (const k in screens) screens[k].classList.add('hidden');
   startGame();
 });
+document.getElementById('btnTutorial').addEventListener('click', () => startTutorial());
 document.getElementById('btnChar').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('char'); });
 document.getElementById('btnHelp').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('help'); });
 for (const btn of document.querySelectorAll('.back')) {
@@ -758,7 +959,7 @@ for (const btn of document.querySelectorAll('.char-btn')) {
 function togglePause() {
   if (!state.running) return;
   state.paused = !state.paused;
-  ui = state.paused ? 'paused' : 'playing';
+  ui = state.paused ? 'paused' : (state.tutorial ? 'tutorial' : 'playing');
   if (state.paused) {
     overlay.querySelector('h1').textContent = '已暂停';
     overlay.querySelector('div').textContent = `当前得分：${Math.floor(state.distance)}`;
@@ -776,6 +977,10 @@ document.getElementById('btnMenu').addEventListener('click', () => {
   // 结束本局并回主菜单
   state.running = false;
   state.paused = false;
+  state.tutorial = false;
+  tutorial.active = false;
+  tutorialPromptText('', 0);
+  clearTutorialObjects();
   overlay.classList.add('hidden');
   pauseBtns.classList.add('hidden');
   showScreen('menu');
@@ -793,8 +998,8 @@ addEventListener('keydown', (e) => {
   if (state.running && e.key === 'Escape') { togglePause(); return; }
   if (!state.running) { startGame(); return; }
   if (state.paused) return;
-  if ((e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
-  if ((e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
+  if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
+  if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
   if (e.key === 'ArrowUp' && !state.jumping) {
     state.jumping = true;
     sfx('jump');
@@ -846,6 +1051,7 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
   if (state.running && !state.paused) {
+    updateTutorial(dt);
     // 技能计时
     if (state.skillT > 0) {
       state.skillT -= dt;
@@ -867,10 +1073,11 @@ function tick() {
         boost = 1 + 0.5 * (1 - t) * (1 - t); // 平方衰减 = 先快后慢
       }
     }
-    const v = state.speed * boost; // 本帧实际前进速度
+    const v = state.tutorial ? 28 : state.speed * boost; // 教学实际速度始终固定28，普通模式使用滑铲加速
 
     state.distance += v * dt;
-    state.speed = Math.min(state.speed + dt * 0.35, 35); // 逐渐加速，上限 35
+    state.speed = state.tutorial ? 28 : Math.min(state.speed + dt * 0.35, 35); // 教学固定28，普通模式逐渐加速
+    if (state.tutorial && tutorial.lockCenter) state.lane = 1;
     scoreEl.textContent = Math.floor(state.distance) + state.bonus;
     speedEl.textContent = v.toFixed(1);
 
@@ -935,7 +1142,7 @@ function tick() {
     }
 
     // 生成障碍：难度随分数上升，间距随速度缩短
-    if (state.distance >= state.nextSpawn) {
+    if (!state.tutorial && state.distance >= state.nextSpawn) {
       const difficulty = state.distance > 800 ? 2 : state.distance > 300 ? 1 : 0;
       spawnWave(-80, difficulty);
       const gap = Math.max(26 - state.speed * 0.7, 10);
@@ -943,7 +1150,7 @@ function tick() {
     }
 
     // 生成粉色奖励方块：成功生成后，推后下一波障碍，留出吃方块的反应空间
-    if (state.distance >= state.nextBonus) {
+    if (!state.tutorial && state.distance >= state.nextBonus) {
       if (spawnBonus(-80)) {
         state.nextSpawn = Math.max(state.nextSpawn, state.distance + 18);
       }
@@ -951,7 +1158,7 @@ function tick() {
     }
 
     // 生成技巧方块：约一半概率生成技巧链，否则单个方块
-    if (state.distance >= state.nextTrick) {
+    if (!state.tutorial && state.distance >= state.nextTrick) {
       let chainLen = 0;
       if (Math.random() < 0.55) chainLen = spawnChain(-85);
       if (chainLen > 0) {
@@ -1055,7 +1262,7 @@ function tick() {
       const pHalf = 0.45 * player.scale.y;
       const hitY = (player.position.y - pHalf) < o.userData.top &&
                    (player.position.y + pHalf) > o.userData.bottom;
-      if (hitX && hitZ && hitY && !invincible) gameOver();
+      if (hitX && hitZ && hitY && !invincible && !state.tutorial) gameOver();
     }
   }
 
