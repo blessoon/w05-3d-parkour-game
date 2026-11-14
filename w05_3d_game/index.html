@@ -632,7 +632,7 @@ const state = {
   paused: false,
   dead: false,
   tutorial: false,
-  level: 0, levelActive: false, levelTarget: 2400, levelGround: 0,
+  level: 0, levelActive: false, levelTarget: 2400, levelClock: 0, levelDuration: 30, levelGround: 0,
   bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
 };
 
@@ -1252,6 +1252,7 @@ function spawnFixedWave(z, index) {
 
 function updateLevel(dt) {
   if (!state.levelActive || state.bossActive) return;
+  state.levelClock += dt;
   if (state.level >= 3 && state.distance > 720 && !levelLayerShown) {
     levelLayerShown = true;
     state.levelGround = 5;
@@ -1266,7 +1267,7 @@ function updateLevel(dt) {
     spawnFixedWave(-82, Math.floor(state.distance / 32));
     state.nextSpawn += Math.max(25 - state.level * 1.2, 17);
   }
-  if (state.distance >= state.levelTarget) {
+  if (state.levelClock >= state.levelDuration) {
     if (state.level === 5) startBossFight();
     else {
       state.levelActive = false;
@@ -1288,7 +1289,7 @@ function startLevel(level) {
     skillCharge: 0, skillT: 0, slideT: 0, nextSpawn: 25,
     nextBonus: 999999, nextTrick: 999999, running: true, paused: false,
     dead: false, tutorial: false, level, levelActive: true, levelTarget: level === 5 ? 1800 : 1500,
-    levelGround: 0, bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
+    levelClock: 0, levelDuration: 30, levelGround: 0, bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
   });
   levelLayerShown = false;
   road.position.y = 0;
@@ -1311,7 +1312,7 @@ function startGame() {
     skillCharge: 0, skillT: 0,
     slideT: 0, nextSpawn: 40, nextBonus: 70, nextTrick: 90,
     running: true, paused: false, dead: false, tutorial: false,
-    level: 0, levelActive: false, levelGround: 0, bossActive: false,
+    level: 0, levelActive: false, levelClock: 0, levelGround: 0, bossActive: false,
   });
   ui = 'playing';
   // 清理上一局的技能特效
