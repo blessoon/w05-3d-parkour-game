@@ -756,7 +756,7 @@ function startBasicTutorial() {
   tutorial.mode = 'basic';
   tutorialPromptText('', 0);
   for (const k in screens) screens[k].classList.add('hidden');
-  ui = 'tutorial';
+  ui = 'tutorialPlaying';
   if (flameGroup) { scene.remove(flameGroup); flameGroup = null; }
   for (const g of ghosts) scene.remove(g.mesh);
   ghosts.length = 0;
@@ -805,6 +805,28 @@ const comboLessons = [
       { k: 'trick', type: 'green', lane: 0, y: 0.45, z: -76 },
       { k: 'trick', type: 'green', lane: 0, y: 1.5, z: -87 },
       { k: 'obstacle', type: 'tall', lane: 0, z: -99 },
+    ],
+  },
+  {
+    title: '二段跳接右移',
+    steps: [
+      { k: 'trick', type: 'green', lane: 1, y: 0.45, z: -58 },
+      { k: 'trick', type: 'green', lane: 1, y: 1.5, z: -69 },
+      // 位于二段跳的上升轨迹中，抬高后更容易自然接上右移。
+      { k: 'trick', type: 'blue', lane: 1, y: 2.8, z: -78 },
+      { k: 'obstacle', type: 'tall', lane: 1, z: -88 },
+      { k: 'obstacle', type: 'low', lane: 2, z: -100 },
+    ],
+  },
+  {
+    title: '滑铲接悬浮续跳',
+    steps: [
+      { k: 'trick', type: 'cyan', lane: 1, y: 0.45, z: -58 },
+      { k: 'obstacle', type: 'over', lane: 1, z: -66 },
+      { k: 'trick', type: 'green', lane: 1, y: 0.45, z: -76 },
+      { k: 'white', lane: 1, units: 6, z: -88 },
+      { k: 'trick', type: 'green', lane: 1, y: 1.5, z: -96 },
+      { k: 'obstacle', type: 'tall', lane: 1, z: -108 },
     ],
   },
 ];
@@ -926,7 +948,7 @@ function startComboTutorial() {
   tutorial.comboFailures = 0;
   tutorial.comboSpawned = false;
   for (const k in screens) screens[k].classList.add('hidden');
-  ui = 'tutorial';
+  ui = 'tutorialPlaying';
   resetTutorialPlayer();
   updateSkillHud();
   bonusCountEl.textContent = 0;
@@ -1105,7 +1127,7 @@ const screens = {
   char: document.getElementById('charScreen'),
   help: document.getElementById('helpScreen'),
 };
-let ui = 'menu'; // menu | char | help | playing | paused | over
+let ui = 'menu'; // menu | tutorial(选择页) | char | help | playing | tutorialPlaying | paused | over
 
 function showScreen(name) {
   for (const k in screens) screens[k].classList.toggle('hidden', k !== name);
@@ -1139,7 +1161,7 @@ for (const btn of document.querySelectorAll('.char-btn')) {
 function togglePause() {
   if (!state.running) return;
   state.paused = !state.paused;
-  ui = state.paused ? 'paused' : (state.tutorial ? 'tutorial' : 'playing');
+  ui = state.paused ? 'paused' : (state.tutorial ? 'tutorialPlaying' : 'playing');
   if (state.paused) {
     overlay.querySelector('h1').textContent = '已暂停';
     overlay.querySelector('div').textContent = `当前得分：${Math.floor(state.distance)}`;
