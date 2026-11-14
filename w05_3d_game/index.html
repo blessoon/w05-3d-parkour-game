@@ -100,6 +100,13 @@
     opacity: 0; transition: opacity 1s ease;
   }
   #tutorialPrompt.visible { opacity: 1; }
+  #creditsScreen { background: #000; overflow: hidden; }
+  #creditsRoll { width: min(90vw, 760px); text-align: center; transform: translateY(55vh); animation: creditsRoll 22s 4s linear forwards; }
+  #creditsRoll h1 { font-size: 42px; margin-bottom: 34px; }
+  #creditsRoll p { margin: 18px 0; font-size: 22px; }
+  #creditsRoll strong { display: block; margin-top: 54px; font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endStop 22s linear forwards; }
+  @keyframes creditsRoll { 0% { transform: translateY(55vh); } 82% { transform: translateY(-12vh); } 100% { transform: translateY(-12vh); } }
+  @keyframes endStop { 0%, 78% { opacity: 0; } 86%, 94% { opacity: 1; } 100% { opacity: 0; } }
 </style>
 <script type="importmap">
 { "imports": { "three": "./lib/three.module.js" } }
@@ -117,9 +124,21 @@
 <div id="menu" class="screen">
   <h1>3D 跑酷</h1>
   <button id="btnStart">开始游戏</button>
+  <button id="btnLevels">选择关卡</button>
   <button id="btnTutorial">玩法教程</button>
   <button id="btnChar">角色选择</button>
   <button id="btnHelp">玩法说明</button>
+</div>
+
+<!-- 固定关卡选择 -->
+<div id="levelScreen" class="screen hidden">
+  <h1>选择关卡</h1>
+  <button data-level="1">第1关 · 起跑线</button>
+  <button data-level="2">第2关 · 交错街区</button>
+  <button data-level="3">第3关 · 高空分层</button>
+  <button data-level="4">第4关 · 极限连段</button>
+  <button data-level="5">第5关 · 黑色暴怒 Boss</button>
+  <button class="back">返回</button>
 </div>
 
 <!-- 教程选择 -->
@@ -158,6 +177,19 @@
     主菜单的“玩法教程”含基础方块教程与组合方块教程；教学速度固定为 28
   </div>
   <button class="back">返回</button>
+</div>
+
+<!-- Boss结束后的电影字幕 -->
+<div id="creditsScreen" class="screen hidden">
+  <div id="creditsRoll">
+    <h1>制作组</h1>
+    <p>游戏内容与玩法：徐羿</p>
+    <p>操作与手感优化：刘尚昆</p>
+    <p>UI与音效设计：陈乐儒</p>
+    <p>Debug、性能与兼容性：熊嘉舜</p>
+    <p>Demo模式与宣传视频：田富尧</p>
+    <strong>END</strong>
+  </div>
 </div>
 
 <!-- 暂停 / 游戏结束（内容动态填充） -->
@@ -251,9 +283,10 @@ function spawnObstacle(z, lane, type) {
     h = 1.6; y = 0.8; bottom = 0; top = 1.6; mat = tallMat;
   }
   const obs = new THREE.Mesh(new THREE.BoxGeometry(1.4, h, 1.2), mat);
-  obs.position.set(LANES[lane], y, z);
-  obs.userData.bottom = bottom;
-  obs.userData.top = top;
+  const ground = state.levelGround || 0;
+  obs.position.set(LANES[lane], y + ground, z);
+  obs.userData.bottom = bottom + ground;
+  obs.userData.top = top + ground;
   scene.add(obs);
   obstacles.push(obs);
 }
@@ -298,7 +331,8 @@ function makeArrow(type) {
 // 生成一个技巧方块（type: green/red/blue/cyan，带箭头，空中带投影）
 function addTrickCube(type, lane, y, z) {
   const cube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), trickMats[type]);
-  cube.position.set(LANES[lane], y, z);
+  const ground = state.levelGround || 0;
+  cube.position.set(LANES[lane], y + ground, z);
   cube.userData = { type };
   // 正面贴上对应方向箭头，提示玩家要按的方向键
   const arrow = makeArrow(type);
@@ -310,7 +344,7 @@ function addTrickCube(type, lane, y, z) {
       new THREE.MeshBasicMaterial({ color: trickMats[type].color, transparent: true, opacity: 0.3 })
     );
     shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(cube.position.x, 0.02, z);
+    shadow.position.set(cube.position.x, 0.02 + ground, z);
     scene.add(shadow);
     cube.userData.shadow = shadow;
   }
@@ -321,8 +355,9 @@ function addTrickCube(type, lane, y, z) {
 // 生成一个白色长条（lane 跑道，zCenter 中心位置，units 单位长度）
 function addWhiteBar(lane, zCenter, units) {
   const len = units * 0.9;
+  const ground = state.levelGround || 0;
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, len), whiteMat);
-  bar.position.set(LANES[lane], 1.5, zCenter);
+  bar.position.set(LANES[lane], 1.5 + ground, zCenter);
   bar.userData = { type: 'white', units, traveled: 0, paidUnits: 0 };
   const shadow = new THREE.Mesh(
     new THREE.PlaneGeometry(0.5, len),
@@ -426,13 +461,14 @@ function laneFreeAt(z, lane, margin = 6) {
 
 // 在指定跑道、高度生成粉色方块
 function spawnBonusAt(z, lane, y) {
+  const ground = state.levelGround || 0;
   const cube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), bonusMat);
-  cube.position.set(LANES[lane], y, z);
+  cube.position.set(LANES[lane], y + ground, z);
   if (y > 1) {
     // 空中方块在地面投一个粉色光圈影子，提示它的水平位置
     const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.55, 24), shadowMat);
     shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(cube.position.x, 0.02, z);
+    shadow.position.set(cube.position.x, 0.02 + ground, z);
     scene.add(shadow);
     cube.userData.shadow = shadow;
   }
@@ -596,6 +632,8 @@ const state = {
   paused: false,
   dead: false,
   tutorial: false,
+  level: 0, levelActive: false, levelTarget: 2400, levelGround: 0,
+  bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
 };
 
 // ---------- 基础方块教学 ----------
@@ -1083,6 +1121,169 @@ function collectBonus(i) {
   removeBonus(i);
 }
 
+// ---------- 五个固定地图关卡 ----------
+const LEVEL_PATTERNS = [
+  [[null,'tall',null],[null,'low',null],['over',null,null],[null,null,'tall'],['low',null,'over']],
+  [['tall',null,'low'],[null,'over',null],['low','tall',null],[null,'low','over'],['tall',null,null]],
+  [[null,'tall',null],['low',null,'low'],['over',null,null],[null,'over','low'],['tall',null,'over']],
+  [['tall','low',null],[null,'over','tall'],['low',null,'over'],['tall',null,'low'],[null,'tall','over']],
+];
+let levelLayerShown = false;
+let bossGroup = null;
+const bossBullets = [];
+let bossVolleyT = 0;
+
+function clearBoss() {
+  if (bossGroup) { scene.remove(bossGroup); bossGroup = null; }
+  while (bossBullets.length) scene.remove(bossBullets.pop().mesh);
+}
+
+function createBoss() {
+  clearBoss();
+  bossGroup = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(5.4, 5.4, 2.8), new THREE.MeshStandardMaterial({ color: 0x050509, roughness: 0.5 }));
+  bossGroup.add(body);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2233 });
+  for (const x of [-1.25, 1.25]) {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.42, 0.12), eyeMat);
+    eye.position.set(x, 0.85, 1.42); eye.rotation.z = x < 0 ? -0.18 : 0.18; bossGroup.add(eye);
+  }
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.7, 0.18), new THREE.MeshBasicMaterial({ color: 0x550008 }));
+  mouth.position.set(0, -0.75, 1.45); bossGroup.add(mouth);
+  for (let i = -2; i <= 2; i++) {
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    tooth.position.set(i * 0.42, -0.75 + (i % 2) * 0.12, 1.58); tooth.rotation.x = Math.PI; bossGroup.add(tooth);
+  }
+  bossGroup.position.set(0, (state.levelGround || 0) + 3.2, -30);
+  scene.add(bossGroup);
+}
+
+function spawnBossVolley() {
+  // 每轮保留至少一条明显安全路线，同时在地面和空中交错布置弹幕。
+  const patterns = [
+    [{ lane: 0, y: 0.7 }, { lane: 1, y: 2.6 }],
+    [{ lane: 1, y: 0.7 }, { lane: 2, y: 2.8 }],
+    [{ lane: 0, y: 2.5 }, { lane: 2, y: 0.8 }],
+    [{ lane: 0, y: 0.8 }, { lane: 1, y: 2.6 }, { lane: 2, y: 0.8 }],
+    [{ lane: 1, y: 0.8 }, { lane: 2, y: 2.7 }],
+  ];
+  const pattern = patterns[(state.bossRound - 1) % patterns.length];
+  for (const p of pattern) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), new THREE.MeshBasicMaterial({ color: 0xff1828 }));
+    mesh.position.set(LANES[p.lane], (state.levelGround || 0) + p.y, -31);
+    mesh.userData = { mesh, age: 0, wobble: (p.lane - 1) * 0.35 };
+    scene.add(mesh); bossBullets.push(mesh.userData);
+  }
+}
+
+function startBossFight() {
+  state.bossActive = true;
+  state.bossRound = 1;
+  state.bossRoundT = 12;
+  state.bossGapT = 0;
+  bossVolleyT = 0;
+  createBoss();
+  tutorialPromptText('终点 Boss：黑色暴怒', 3);
+}
+
+function finishBossFight() {
+  state.bossActive = false;
+  state.levelActive = false;
+  clearBoss();
+  clearTutorialObjects();
+  state.running = false;
+  tutorialPromptText('', 0);
+  const credits = screens.credits;
+  credits.classList.remove('eyeOpen');
+  showScreen('credits');
+  setTimeout(() => credits.classList.add('eyeOpen'), 22000);
+  setTimeout(() => showScreen('menu'), 26000);
+}
+
+function updateBoss(dt, v) {
+  if (!state.bossActive || !bossGroup) return;
+  bossGroup.position.x += (player.position.x - bossGroup.position.x) * Math.min(dt * 5, 1);
+  bossGroup.position.y = (state.levelGround || 0) + 3.2 + Math.sin(performance.now() * 0.004) * 0.15;
+  if (state.bossGapT > 0) {
+    state.bossGapT -= dt;
+    if (state.bossGapT <= 0) { state.bossRound++; state.bossRoundT = 12; bossVolleyT = 0; }
+  } else {
+    state.bossRoundT -= dt;
+    bossVolleyT -= dt;
+    if (bossVolleyT <= 0) { spawnBossVolley(); bossVolleyT = Math.max(1.3 - state.bossRound * 0.08, 0.8); }
+    if (state.bossRoundT <= 0) {
+      if (state.bossRound >= 5) finishBossFight();
+      else state.bossGapT = 4;
+    }
+  }
+  for (let i = bossBullets.length - 1; i >= 0; i--) {
+    const b = bossBullets[i];
+    b.age += dt;
+    b.mesh.position.z += v * dt;
+    b.mesh.position.x += Math.sin(b.age * 3 + b.wobble) * 0.012;
+    const hit = Math.abs(b.mesh.position.x - player.position.x) < 0.72 &&
+      Math.abs(b.mesh.position.y - player.position.y) < 0.85 &&
+      Math.abs(b.mesh.position.z - player.position.z) < 0.95;
+    if (hit && !(state.skillT > 0 && state.char === 'red')) { scene.remove(b.mesh); bossBullets.splice(i, 1); gameOver(); continue; }
+    if (b.mesh.position.z > 8) { scene.remove(b.mesh); bossBullets.splice(i, 1); }
+  }
+}
+
+function spawnFixedWave(z, index) {
+  const pattern = LEVEL_PATTERNS[(index + state.level - 1) % LEVEL_PATTERNS.length];
+  for (let lane = 0; lane < 3; lane++) if (pattern[lane] !== null) spawnObstacle(z, lane, pattern[lane]);
+}
+
+function updateLevel(dt) {
+  if (!state.levelActive || state.bossActive) return;
+  if (state.level >= 3 && state.distance > 720 && !levelLayerShown) {
+    levelLayerShown = true;
+    state.levelGround = 5;
+    road.position.y = 5;
+    for (const dash of lines) dash.position.y = 5.01;
+    // 二段跳引导：先让玩家完成上层跑道入口的空中动作。
+    addTrickCube('green', 1, 0.45, -70);
+    addTrickCube('green', 1, 1.5, -82);
+    tutorialPromptText('第三关：跑道抬升，使用二段跳登上高层', 4);
+  }
+  if (state.distance >= state.nextSpawn) {
+    spawnFixedWave(-82, Math.floor(state.distance / 32));
+    state.nextSpawn += Math.max(25 - state.level * 1.2, 17);
+  }
+  if (state.distance >= state.levelTarget) {
+    if (state.level === 5) startBossFight();
+    else {
+      state.levelActive = false;
+      state.running = false;
+      overlay.querySelector('h1').textContent = `第${state.level}关完成`;
+      overlay.querySelector('div').textContent = state.level < 4 ? '下一关即将开始' : '准备进入终点 Boss 关';
+      overlay.querySelector('small').textContent = '请稍候';
+      pauseBtns.classList.add('hidden'); overlay.classList.remove('hidden');
+      setTimeout(() => startLevel(state.level + 1), 3000);
+    }
+  }
+}
+
+function startLevel(level) {
+  clearTutorialObjects(); clearBoss();
+  Object.assign(state, {
+    lane: 1, vy: 0, jumping: false, speed: 18 + level * 2,
+    distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
+    skillCharge: 0, skillT: 0, slideT: 0, nextSpawn: 25,
+    nextBonus: 999999, nextTrick: 999999, running: true, paused: false,
+    dead: false, tutorial: false, level, levelActive: true, levelTarget: level === 5 ? 2600 : 2400,
+    levelGround: 0, bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
+  });
+  levelLayerShown = false;
+  road.position.y = 0;
+  for (const dash of lines) dash.position.y = 0.01;
+  ui = 'playing';
+  for (const k in screens) screens[k].classList.add('hidden');
+  overlay.classList.add('hidden');
+  player.position.set(0, 0.45, 0); player.scale.y = 1;
+  updateSkillHud(); bonusCountEl.textContent = 0;
+}
+
 function startGame() {
   for (const o of obstacles) scene.remove(o);
   while (bonuses.length) removeBonus(bonuses.length - 1);
@@ -1094,6 +1295,7 @@ function startGame() {
     skillCharge: 0, skillT: 0,
     slideT: 0, nextSpawn: 40, nextBonus: 70, nextTrick: 90,
     running: true, paused: false, dead: false, tutorial: false,
+    level: 0, levelActive: false, levelGround: 0, bossActive: false,
   });
   ui = 'playing';
   // 清理上一局的技能特效
@@ -1124,6 +1326,8 @@ function gameOver() {
 const screens = {
   menu: document.getElementById('menu'),
   tutorial: document.getElementById('tutorialScreen'),
+  levels: document.getElementById('levelScreen'),
+  credits: document.getElementById('creditsScreen'),
   char: document.getElementById('charScreen'),
   help: document.getElementById('helpScreen'),
 };
@@ -1140,9 +1344,13 @@ document.getElementById('btnStart').addEventListener('click', () => {
   for (const k in screens) screens[k].classList.add('hidden');
   startGame();
 });
+document.getElementById('btnLevels').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('levels'); });
 document.getElementById('btnTutorial').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('tutorial'); });
 document.getElementById('btnBasicTutorial').addEventListener('click', () => startBasicTutorial());
 document.getElementById('btnComboTutorial').addEventListener('click', () => startComboTutorial());
+for (const btn of document.querySelectorAll('#levelScreen [data-level]')) {
+  btn.addEventListener('click', () => { ensureAudio(); sfx('click'); startLevel(Number(btn.dataset.level)); });
+}
 document.getElementById('btnChar').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('char'); });
 document.getElementById('btnHelp').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('help'); });
 for (const btn of document.querySelectorAll('.back')) {
@@ -1204,7 +1412,7 @@ addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'a') tutorialInput.left = 0.7;
     if (e.key === 'ArrowRight' || e.key === 'd') tutorialInput.right = 0.7;
   }
-  if (ui === 'menu' || ui === 'tutorial' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
+  if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
   if (state.running && e.key === 'Escape') { togglePause(); return; }
   if (!state.running) { startGame(); return; }
   if (state.paused) return;
@@ -1244,7 +1452,7 @@ addEventListener('keydown', (e) => {
 
 // 鼠标点击：菜单界面忽略；结束界面点击重新开始（游戏中点击不再暂停）
 addEventListener('pointerdown', () => {
-  if (ui === 'menu' || ui === 'char' || ui === 'help') return;
+  if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return;
   if (!state.running && ui === 'over') startGame();
 });
 
@@ -1262,6 +1470,7 @@ function tick() {
 
   if (state.running && !state.paused) {
     updateTutorial(dt);
+    updateLevel(dt);
     // 技能计时
     if (state.skillT > 0) {
       state.skillT -= dt;
@@ -1283,7 +1492,8 @@ function tick() {
         boost = 1 + 0.5 * (1 - t) * (1 - t); // 平方衰减 = 先快后慢
       }
     }
-    const v = state.tutorial ? 28 : state.speed * boost; // 教学实际速度始终固定28，普通模式使用滑铲加速
+    const v = state.tutorial ? 28 : state.speed * boost; // 教学固定28，关卡使用递增速度
+    updateBoss(dt, v);
 
     state.distance += v * dt;
     state.speed = state.tutorial ? 28 : Math.min(state.speed + dt * 0.35, 35); // 教学固定28，普通模式逐渐加速
@@ -1303,7 +1513,7 @@ function tick() {
       // 绿色技能期间：上升重力大（更快到顶），下落重力小（滞空更长）
       state.vy -= (haste ? (state.vy > 0 ? 40 : 10) : 25) * dt;
       player.position.y += state.vy * dt;
-      const groundY = 0.45 * player.scale.y;
+      const groundY = (state.levelGround || 0) + 0.45 * player.scale.y;
       if (player.position.y <= groundY) {
         player.position.y = groundY;
         state.jumping = false;
@@ -1312,7 +1522,7 @@ function tick() {
     // 滑铲：模型高度减半，0.8 秒后平滑复原
     const targetScale = state.slideT > 0 ? 0.5 : 1;
     player.scale.y += (targetScale - player.scale.y) * Math.min(dt * 12, 1);
-    if (!state.jumping) player.position.y = 0.45 * player.scale.y;
+    if (!state.jumping) player.position.y = (state.levelGround || 0) + 0.45 * player.scale.y;
     player.rotation.z = -(LANES[state.lane] - player.position.x) * 0.15;
 
     // 连击计时：8 秒没吃到粉色方块就断连击
@@ -1352,7 +1562,7 @@ function tick() {
     }
 
     // 生成障碍：难度随分数上升，间距随速度缩短
-    if (!state.tutorial && state.distance >= state.nextSpawn) {
+    if (!state.tutorial && !state.levelActive && state.distance >= state.nextSpawn) {
       const difficulty = state.distance > 800 ? 2 : state.distance > 300 ? 1 : 0;
       spawnWave(-80, difficulty);
       const gap = Math.max(26 - state.speed * 0.7, 10);
@@ -1360,7 +1570,7 @@ function tick() {
     }
 
     // 生成粉色奖励方块：成功生成后，推后下一波障碍，留出吃方块的反应空间
-    if (!state.tutorial && state.distance >= state.nextBonus) {
+    if (!state.tutorial && !state.levelActive && state.distance >= state.nextBonus) {
       if (spawnBonus(-80)) {
         state.nextSpawn = Math.max(state.nextSpawn, state.distance + 18);
       }
@@ -1368,7 +1578,7 @@ function tick() {
     }
 
     // 生成技巧方块：约一半概率生成技巧链，否则单个方块
-    if (!state.tutorial && state.distance >= state.nextTrick) {
+    if (!state.tutorial && !state.levelActive && state.distance >= state.nextTrick) {
       let chainLen = 0;
       if (Math.random() < 0.55) chainLen = spawnChain(-85);
       if (chainLen > 0) {
@@ -1483,7 +1693,7 @@ function tick() {
   }
 
   // 相机跟随
-  camera.position.set(player.position.x * 0.5, 4.2, 7);
+  camera.position.set(player.position.x * 0.5, 4.2 + (state.levelGround || 0) * 0.65, 7);
   camera.lookAt(player.position.x * 0.6, 1, -8);
   renderer.render(scene, camera);
 }
