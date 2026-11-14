@@ -1229,9 +1229,25 @@ function updateBoss(dt, v) {
   }
 }
 
+const FIXED_EXTRA_PLAN = [
+  { kind: 'bonus', lane: 0, y: 0.45, offset: -9 },
+  { kind: 'trick', type: 'green', lane: 1, y: 0.45, offset: -10 },
+  { kind: 'bonus', lane: 2, y: 1.5, offset: -8 },
+  { kind: 'trick', type: 'cyan', lane: 1, y: 0.45, offset: -10 },
+  { kind: 'bonus', lane: 1, y: 0.45, offset: -9 },
+  { kind: 'trick', type: 'blue', lane: 1, y: 0.45, offset: -10 },
+];
+
 function spawnFixedWave(z, index) {
-  const pattern = LEVEL_PATTERNS[(index + state.level - 1) % LEVEL_PATTERNS.length];
-  for (let lane = 0; lane < 3; lane++) if (pattern[lane] !== null) spawnObstacle(z, lane, pattern[lane]);
+  // 每一关选择自己的固定波次表；此前错误地把“整张地图”当成了“一波”，导致首波三道全变成高墙。
+  const map = LEVEL_PATTERNS[(state.level - 1) % LEVEL_PATTERNS.length];
+  const row = map[index % map.length];
+  for (let lane = 0; lane < 3; lane++) if (row[lane] !== null) spawnObstacle(z, lane, row[lane]);
+  // 奖励和技巧方块也由固定计划生成，重复游玩时位置、类型、高度完全一致。
+  const extra = FIXED_EXTRA_PLAN[(index + state.level - 1) % FIXED_EXTRA_PLAN.length];
+  const ez = z + extra.offset;
+  if (extra.kind === 'bonus') spawnBonusAt(ez, extra.lane, extra.y);
+  else addTrickCube(extra.type, extra.lane, extra.y, ez);
 }
 
 function updateLevel(dt) {
@@ -1271,7 +1287,7 @@ function startLevel(level) {
     distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
     skillCharge: 0, skillT: 0, slideT: 0, nextSpawn: 25,
     nextBonus: 999999, nextTrick: 999999, running: true, paused: false,
-    dead: false, tutorial: false, level, levelActive: true, levelTarget: level === 5 ? 2600 : 2400,
+    dead: false, tutorial: false, level, levelActive: true, levelTarget: level === 5 ? 1800 : 1500,
     levelGround: 0, bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
   });
   levelLayerShown = false;
