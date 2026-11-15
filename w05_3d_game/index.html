@@ -17,7 +17,7 @@
     pointer-events: none; text-shadow: 0 1px 4px #000;
   }
   #overlay {
-    position: fixed; inset: 0; display: flex; flex-direction: column;
+    position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 12px;
     color: #fff; font: 22px system-ui, sans-serif;
     background: rgba(0,0,0,.55);
@@ -1334,7 +1334,7 @@ function gameOver() {
   sfx('crash');
   overlay.querySelector('h1').textContent = '游戏结束';
   overlay.querySelector('div').textContent = `最终得分：${Math.floor(state.distance) + state.bonus}（粉色方块 ×${state.bonusCount}）`;
-  overlay.querySelector('small').textContent = '按任意键重新开始';
+  overlay.querySelector('small').textContent = state.level > 0 ? '按任意键重新开始本关' : '按任意键重新开始';
   pauseBtns.classList.add('hidden'); // 结束界面不显示暂停按钮
   overlay.classList.remove('hidden');
 }
@@ -1431,7 +1431,7 @@ addEventListener('keydown', (e) => {
   }
   if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
   if (state.running && e.key === 'Escape') { togglePause(); return; }
-  if (!state.running) { startGame(); return; }
+  if (!state.running) { if (state.level > 0) startLevel(state.level); else startGame(); return; }
   if (state.paused) return;
   if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
   if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
