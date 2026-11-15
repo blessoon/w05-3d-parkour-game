@@ -102,10 +102,10 @@
   #tutorialPrompt.visible { opacity: 1; }
   #creditsScreen { background: #000; overflow: hidden; }
   #creditsRoll { width: min(90vw, 760px); text-align: center; }
-  #creditsNames { transform: translateY(110vh); animation: creditsNamesRoll 16s 4s linear forwards; }
+  #creditsNames { transform: translateY(110vh); animation: creditsNamesRoll 16s 1s linear forwards; }
   #creditsRoll h1 { font-size: 42px; margin-bottom: 34px; }
   #creditsRoll p { margin: 18px 0; font-size: 22px; }
-  #creditsEnd { position: fixed; left: 50%; top: 100%; transform: translate(-50%, -50%); font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endRoll 9s 20s linear forwards; }
+  #creditsEnd { position: fixed; left: 50%; top: 100%; transform: translate(-50%, -50%); font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endRoll 9s 17s linear forwards; }
   @keyframes creditsNamesRoll { 0% { transform: translateY(110vh); } 100% { transform: translateY(-125vh); } }
   /* END 在名单滚出后从底部滚到中央，停留3秒，再用4秒淡出。 */
   @keyframes endRoll { 0% { top: 110%; opacity: 0; } 22% { top: 50%; opacity: 1; } 55% { top: 50%; opacity: 1; } 100% { top: 50%; opacity: 0; } }
@@ -1186,7 +1186,7 @@ function startBossFight() {
   state.bossGapT = 0;
   bossVolleyT = 0;
   createBoss();
-  tutorialPromptText('终点 Boss：黑色暴怒', 3);
+  // Boss战不显示中央持续提示，避免遮挡弹幕和躲避路线。
 }
 
 function finishBossFight() {
@@ -1199,8 +1199,8 @@ function finishBossFight() {
   const credits = screens.credits;
   credits.classList.remove('eyeOpen');
   showScreen('credits');
-  setTimeout(() => credits.classList.add('eyeOpen'), 29000);
-  setTimeout(() => showScreen('menu'), 33000);
+  setTimeout(() => credits.classList.add('eyeOpen'), 26000);
+  setTimeout(() => showScreen('menu'), 30000);
 }
 
 function updateBoss(dt, v) {
