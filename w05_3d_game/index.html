@@ -1197,9 +1197,7 @@ function finishBossFight() {
   state.running = false;
   tutorialPromptText('', 0);
   const credits = screens.credits;
-  credits.classList.remove('eyeOpen');
   showScreen('credits');
-  setTimeout(() => credits.classList.add('eyeOpen'), 26000);
   setTimeout(() => showScreen('menu'), 30000);
 }
 
@@ -1462,7 +1460,7 @@ addEventListener('keydown', (e) => {
   }
   if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
   if (state.running && e.key === 'Escape') { togglePause(); return; }
-  if (!state.running) { if (state.level > 0) startLevel(state.level); else startGame(); return; }
+  if (!state.running) { if (state.dead) { if (state.level > 0) startLevel(state.level); else startGame(); } return; }
   if (state.paused) return;
   if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
   if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
@@ -1501,7 +1499,7 @@ addEventListener('keydown', (e) => {
 // 鼠标点击：菜单界面忽略；结束界面点击重新开始（游戏中点击不再暂停）
 addEventListener('pointerdown', () => {
   if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return;
-  if (!state.running && ui === 'over') startGame();
+  if (!state.running && ui === 'over') { if (state.level > 0) startLevel(state.level); else startGame(); }
 });
 
 addEventListener('resize', () => {
