@@ -138,6 +138,7 @@
   <button data-level="3">第3关 · 高空分层</button>
   <button data-level="4">第4关 · 极限连段</button>
   <button data-level="5">第5关 · 黑色暴怒 Boss</button>
+  <button id="btnBossDemo">第5关 · Boss 演示模式</button>
   <button class="back">返回</button>
 </div>
 
@@ -283,7 +284,7 @@ function spawnObstacle(z, lane, type) {
     h = 1.6; y = 0.8; bottom = 0; top = 1.6; mat = tallMat;
   }
   const obs = new THREE.Mesh(new THREE.BoxGeometry(1.4, h, 1.2), mat);
-  const ground = state.levelGround || 0;
+  const ground = 0;
   obs.position.set(LANES[lane], y + ground, z);
   obs.userData.bottom = bottom + ground;
   obs.userData.top = top + ground;
@@ -331,7 +332,7 @@ function makeArrow(type) {
 // 生成一个技巧方块（type: green/red/blue/cyan，带箭头，空中带投影）
 function addTrickCube(type, lane, y, z) {
   const cube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), trickMats[type]);
-  const ground = state.levelGround || 0;
+  const ground = 0;
   cube.position.set(LANES[lane], y + ground, z);
   cube.userData = { type };
   // 正面贴上对应方向箭头，提示玩家要按的方向键
@@ -355,7 +356,7 @@ function addTrickCube(type, lane, y, z) {
 // 生成一个白色长条（lane 跑道，zCenter 中心位置，units 单位长度）
 function addWhiteBar(lane, zCenter, units) {
   const len = units * 0.9;
-  const ground = state.levelGround || 0;
+  const ground = 0;
   const bar = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, len), whiteMat);
   bar.position.set(LANES[lane], 1.5 + ground, zCenter);
   bar.userData = { type: 'white', units, traveled: 0, paidUnits: 0 };
@@ -461,7 +462,7 @@ function laneFreeAt(z, lane, margin = 6) {
 
 // 在指定跑道、高度生成粉色方块
 function spawnBonusAt(z, lane, y) {
-  const ground = state.levelGround || 0;
+  const ground = 0;
   const cube = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), bonusMat);
   cube.position.set(LANES[lane], y + ground, z);
   if (y > 1) {
@@ -632,8 +633,8 @@ const state = {
   paused: false,
   dead: false,
   tutorial: false,
-  level: 0, levelActive: false, levelTarget: 2400, levelClock: 0, levelDuration: 30, levelGround: 0,
-  bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
+  level: 0, levelActive: false, levelTarget: 2400, levelClock: 0, levelDuration: 30,
+  bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0, demo: false,
 };
 
 // ---------- 基础方块教学 ----------
@@ -1128,10 +1129,6 @@ const LEVEL_PATTERNS = [
   [[null,'tall',null],['low',null,'low'],['over',null,null],[null,'over','low'],['tall',null,'over']],
   [['tall','low',null],[null,'over','tall'],['low',null,'over'],['tall',null,'low'],[null,'tall','over']],
 ];
-let levelLayerShown = false;
-let layerStairGroup = null;
-const layerGateWalls = [];
-let layerGateHits = 0;
 let bossGroup = null;
 const bossBullets = [];
 let bossVolleyT = 0;
@@ -1157,24 +1154,23 @@ function createBoss() {
     const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     tooth.position.set(i * 0.42, -0.75 + (i % 2) * 0.12, 1.58); tooth.rotation.x = Math.PI; bossGroup.add(tooth);
   }
-  bossGroup.position.set(0, (state.levelGround || 0) + 3.2, -30);
+  bossGroup.position.set(0, 0 + 3.2, -30);
   scene.add(bossGroup);
 }
 
 function spawnBossVolley() {
-  // 每轮保留至少一条明显安全路线，同时在地面和空中交错布置弹幕。
-  const patterns = [
-    [{ lane: 0, y: 0.7 }, { lane: 1, y: 2.6 }],
-    [{ lane: 1, y: 0.7 }, { lane: 2, y: 2.8 }],
-    [{ lane: 0, y: 2.5 }, { lane: 2, y: 0.8 }],
-    [{ lane: 0, y: 0.8 }, { lane: 1, y: 2.6 }, { lane: 2, y: 0.8 }],
-    [{ lane: 1, y: 0.8 }, { lane: 2, y: 2.7 }],
-  ];
-  const pattern = patterns[(state.bossRound - 1) % patterns.length];
-  for (const p of pattern) {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), new THREE.MeshBasicMaterial({ color: 0xff1828 }));
-    mesh.position.set(LANES[p.lane], (state.levelGround || 0) + p.y, -31);
-    mesh.userData = { mesh, age: 0, wobble: (p.lane - 1) * 0.35 };
+  // 弹幕密度随轮次增加；每枚弹幕有独立延迟、水平/垂直速度，形成随机先后和斜向路线。
+  const count = 9 + state.bossRound * 2;
+  for (let i = 0; i < count; i++) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32 + Math.random() * 0.12, 12, 12), new THREE.MeshBasicMaterial({ color: 0xff1828 }));
+    const lane = Math.floor(Math.random() * 3);
+    mesh.position.set(LANES[lane], 0.55 + Math.random() * 2.55, -31);
+    mesh.visible = false;
+    mesh.userData = {
+      mesh, age: 0, delay: i * (0.12 + Math.random() * 0.16),
+      vx: (Math.random() - 0.5) * (1.2 + state.bossRound * 0.18),
+      vy: (Math.random() - 0.5) * (0.8 + state.bossRound * 0.12),
+    };
     scene.add(mesh); bossBullets.push(mesh.userData);
   }
 }
@@ -1206,14 +1202,14 @@ function finishBossFight() {
 function updateBoss(dt, v) {
   if (!state.bossActive || !bossGroup) return;
   bossGroup.position.x += (player.position.x - bossGroup.position.x) * Math.min(dt * 5, 1);
-  bossGroup.position.y = (state.levelGround || 0) + 3.2 + Math.sin(performance.now() * 0.004) * 0.15;
+  bossGroup.position.y = 0 + 3.2 + Math.sin(performance.now() * 0.004) * 0.15;
   if (state.bossGapT > 0) {
     state.bossGapT -= dt;
     if (state.bossGapT <= 0) { state.bossRound++; state.bossRoundT = 12; bossVolleyT = 0; }
   } else {
     state.bossRoundT -= dt;
     bossVolleyT -= dt;
-    if (bossVolleyT <= 0) { spawnBossVolley(); bossVolleyT = Math.max(1.3 - state.bossRound * 0.08, 0.8); }
+    if (bossVolleyT <= 0) { spawnBossVolley(); bossVolleyT = Math.max(0.72 - state.bossRound * 0.05, 0.38); }
     if (state.bossRoundT <= 0) {
       if (state.bossRound >= 5) finishBossFight();
       else state.bossGapT = 4;
@@ -1222,12 +1218,15 @@ function updateBoss(dt, v) {
   for (let i = bossBullets.length - 1; i >= 0; i--) {
     const b = bossBullets[i];
     b.age += dt;
+    if (b.age < b.delay) continue;
+    b.mesh.visible = true;
     b.mesh.position.z += v * dt;
-    b.mesh.position.x += Math.sin(b.age * 3 + b.wobble) * 0.012;
+    b.mesh.position.x += b.vx * dt;
+    b.mesh.position.y += b.vy * dt;
     const hit = Math.abs(b.mesh.position.x - player.position.x) < 0.72 &&
       Math.abs(b.mesh.position.y - player.position.y) < 0.85 &&
       Math.abs(b.mesh.position.z - player.position.z) < 0.95;
-    if (hit && !(state.skillT > 0 && state.char === 'red')) { scene.remove(b.mesh); bossBullets.splice(i, 1); gameOver(); continue; }
+    if (hit && !(state.skillT > 0 && state.char === 'red') && !state.demo) { scene.remove(b.mesh); bossBullets.splice(i, 1); gameOver(); continue; }
     if (b.mesh.position.z > 8) { scene.remove(b.mesh); bossBullets.splice(i, 1); }
   }
 }
@@ -1240,50 +1239,6 @@ const FIXED_EXTRA_PLAN = [
   { kind: 'bonus', lane: 1, y: 0.45, offset: -9 },
   { kind: 'trick', type: 'blue', lane: 1, y: 0.45, offset: -10 },
 ];
-
-function clearLayerStairs() {
-  if (layerStairGroup) { scene.remove(layerStairGroup); layerStairGroup = null; }
-  while (layerGateWalls.length) {
-    const wall = layerGateWalls.pop();
-    const index = obstacles.indexOf(wall);
-    if (index >= 0) obstacles.splice(index, 1);
-    scene.remove(wall);
-  }
-}
-
-function createLayerStairs() {
-  clearLayerStairs();
-  layerGateHits = 0;
-  layerStairGroup = new THREE.Group();
-  const stairMat = new THREE.MeshStandardMaterial({ color: 0x405c99, roughness: 0.8 });
-  const heights = [0.5, 1.8, 3.1, 4.4, 5.0];
-  for (let i = 0; i < heights.length; i++) {
-    const step = new THREE.Mesh(new THREE.BoxGeometry(8, 0.45, 12), stairMat);
-    step.position.set(0, heights[i], -72 - i * 12);
-    layerStairGroup.add(step);
-  }
-  scene.add(layerStairGroup);
-  // 入口横墙：不完成两次跳跃就会撞上，完成后会被移除。
-  for (let lane = 0; lane < 3; lane++) {
-    spawnObstacle(-132, lane, 'tall');
-    const wall = obstacles[obstacles.length - 1];
-    wall.userData.layerGateWall = true;
-    layerGateWalls.push(wall);
-  }
-  addTrickCube('green', 1, 0.45, -70);
-  tricks[tricks.length - 1].userData.layerGate = true;
-  addTrickCube('green', 1, 1.5, -82);
-  tricks[tricks.length - 1].userData.layerGate = true;
-}
-
-function activateLayerRunway() {
-  if (state.level !== 3 || state.levelGround >= 5) return;
-  state.levelGround = 5;
-  road.position.y = 5;
-  for (const dash of lines) dash.position.y = 5.01;
-  clearLayerStairs();
-  tutorialPromptText('二段跳成功，进入高层跑道', 2);
-}
 
 function spawnFixedWave(z, index) {
   // 每一关选择自己的固定波次表；此前错误地把“整张地图”当成了“一波”，导致首波三道全变成高墙。
@@ -1300,19 +1255,6 @@ function spawnFixedWave(z, index) {
 function updateLevel(dt) {
   if (!state.levelActive || state.bossActive) return;
   state.levelClock += dt;
-  if (state.level === 3 && state.distance > 720 && !levelLayerShown) {
-    levelLayerShown = true;
-    state.nextSpawn = state.distance + 150;
-    createLayerStairs();
-    tutorialPromptText('第三关：阶梯跑道入口，完成二段跳才能登上高层', 4);
-  }
-  if (layerStairGroup) {
-    layerStairGroup.position.z += (18 + state.level * 2) * dt;
-    if (layerStairGroup.position.z > 20) {
-      scene.remove(layerStairGroup);
-      layerStairGroup = null;
-    }
-  }
   if (state.distance >= state.nextSpawn) {
     spawnFixedWave(-82, Math.floor(state.distance / 32));
     state.nextSpawn += Math.max(25 - state.level * 1.2, 17);
@@ -1339,9 +1281,8 @@ function startLevel(level) {
     skillCharge: 0, skillT: 0, slideT: 0, nextSpawn: 25,
     nextBonus: 999999, nextTrick: 999999, running: true, paused: false,
     dead: false, tutorial: false, level, levelActive: true, levelTarget: level === 5 ? 1800 : 1500,
-    levelClock: 0, levelDuration: 30, levelGround: 0, bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0,
+    levelClock: 0, levelDuration: 30, bossActive: false, bossRound: 0, bossRoundT: 0, bossGapT: 0, demo: false,
   });
-  levelLayerShown = false;
   road.position.y = 0;
   for (const dash of lines) dash.position.y = 0.01;
   ui = 'playing';
@@ -1349,6 +1290,37 @@ function startLevel(level) {
   overlay.classList.add('hidden');
   player.position.set(0, 0.45, 0); player.scale.y = 1;
   updateSkillHud(); bonusCountEl.textContent = 0;
+}
+
+function startBossDemo() {
+  ensureAudio();
+  sfx('click');
+  startLevel(5);
+  state.demo = true;
+  tutorialPromptText('第5关 Boss 演示模式：自动躲避并通关', 4);
+}
+
+function updateDemo(dt) {
+  if (!state.demo || !state.running) return;
+  // 演示模式自动选取当前危险最少的跑道，并在低空危险接近时自动起跳。
+  const candidates = [0, 1, 2];
+  const threatScore = (lane) => {
+    let score = 0;
+    for (const o of obstacles) if (Math.abs(o.position.x - LANES[lane]) < 0.1 && o.position.z > -28 && o.position.z < 2) score += 3;
+    for (const b of bossBullets) if (b.mesh.visible && Math.abs(b.mesh.position.x - LANES[lane]) < 1.0 && b.mesh.position.z > -25 && b.mesh.position.z < 2) score += 5;
+    return score;
+  };
+  const target = candidates.sort((a, b) => threatScore(a) - threatScore(b))[0];
+  if (!state.bossActive) {
+    const next = obstacles.find(o => o.position.z > -20 && o.position.z < -4);
+    if (next && next.userData.top < 0.6 && !state.jumping) {
+      state.jumping = true; state.vy = 10;
+    }
+  } else {
+    state.lane = target;
+    const lowThreat = bossBullets.some(b => b.mesh.visible && b.mesh.position.z > -10 && b.mesh.position.z < 1 && b.mesh.position.y < player.position.y + 0.5 && Math.abs(b.mesh.position.x - player.position.x) < 1);
+    if (lowThreat && !state.jumping) { state.jumping = true; state.vy = 10; }
+  }
 }
 
 function startGame() {
@@ -1362,7 +1334,7 @@ function startGame() {
     skillCharge: 0, skillT: 0,
     slideT: 0, nextSpawn: 40, nextBonus: 70, nextTrick: 90,
     running: true, paused: false, dead: false, tutorial: false,
-    level: 0, levelActive: false, levelClock: 0, levelGround: 0, bossActive: false,
+    level: 0, levelActive: false, levelClock: 0, bossActive: false, demo: false,
   });
   ui = 'playing';
   // 清理上一局的技能特效
@@ -1418,6 +1390,7 @@ document.getElementById('btnComboTutorial').addEventListener('click', () => star
 for (const btn of document.querySelectorAll('#levelScreen [data-level]')) {
   btn.addEventListener('click', () => { ensureAudio(); sfx('click'); startLevel(Number(btn.dataset.level)); });
 }
+document.getElementById('btnBossDemo').addEventListener('click', () => startBossDemo());
 document.getElementById('btnChar').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('char'); });
 document.getElementById('btnHelp').addEventListener('click', () => { ensureAudio(); sfx('click'); showScreen('help'); });
 for (const btn of document.querySelectorAll('.back')) {
@@ -1538,6 +1511,7 @@ function tick() {
   if (state.running && !state.paused) {
     updateTutorial(dt);
     updateLevel(dt);
+    updateDemo(dt);
     // 技能计时
     if (state.skillT > 0) {
       state.skillT -= dt;
@@ -1580,7 +1554,7 @@ function tick() {
       // 绿色技能期间：上升重力大（更快到顶），下落重力小（滞空更长）
       state.vy -= (haste ? (state.vy > 0 ? 40 : 10) : 25) * dt;
       player.position.y += state.vy * dt;
-      const groundY = (state.levelGround || 0) + 0.45 * player.scale.y;
+      const groundY = 0 + 0.45 * player.scale.y;
       if (player.position.y <= groundY) {
         player.position.y = groundY;
         state.jumping = false;
@@ -1589,7 +1563,7 @@ function tick() {
     // 滑铲：模型高度减半，0.8 秒后平滑复原
     const targetScale = state.slideT > 0 ? 0.5 : 1;
     player.scale.y += (targetScale - player.scale.y) * Math.min(dt * 12, 1);
-    if (!state.jumping) player.position.y = (state.levelGround || 0) + 0.45 * player.scale.y;
+    if (!state.jumping) player.position.y = 0 + 0.45 * player.scale.y;
     player.rotation.z = -(LANES[state.lane] - player.position.x) * 0.15;
 
     // 连击计时：8 秒没吃到粉色方块就断连击
@@ -1706,10 +1680,6 @@ function tick() {
         state.vy = haste ? 12 : 9; // 空中触发 = 二段跳
         floatText(t.position, '+500');
         sfx('trick');
-        if (t.userData.layerGate) {
-          layerGateHits++;
-          if (layerGateHits >= 2) activateLayerRunway();
-        }
         removeTrick(i);
       } else if (type === 'red' && (keys['ArrowLeft'] || keys['a'] || (comboAssist && tutorialInput.left > 0))) {
         state.bonus += 500;
@@ -1756,7 +1726,7 @@ function tick() {
       const pHalf = 0.45 * player.scale.y;
       const hitY = (player.position.y - pHalf) < o.userData.top &&
                    (player.position.y + pHalf) > o.userData.bottom;
-      if (hitX && hitZ && hitY && !invincible) {
+      if (hitX && hitZ && hitY && !invincible && !state.demo) {
         if (state.tutorial && tutorial.mode === 'combo' && o.userData.combo) comboFail();
         else if (!state.tutorial) gameOver();
       }
@@ -1764,7 +1734,7 @@ function tick() {
   }
 
   // 相机跟随
-  camera.position.set(player.position.x * 0.5, 4.2 + (state.levelGround || 0) * 0.65, 7);
+  camera.position.set(player.position.x * 0.5, 4.2 + 0 * 0.65, 7);
   camera.lookAt(player.position.x * 0.6, 1, -8);
   renderer.render(scene, camera);
 }
