@@ -1129,6 +1129,9 @@ const LEVEL_PATTERNS = [
   [['tall','low',null],[null,'over','tall'],['low',null,'over'],['tall',null,'low'],[null,'tall','over']],
 ];
 let levelLayerShown = false;
+let layerStairGroup = null;
+const layerGateWalls = [];
+let layerGateHits = 0;
 let bossGroup = null;
 const bossBullets = [];
 let bossVolleyT = 0;
@@ -1238,6 +1241,50 @@ const FIXED_EXTRA_PLAN = [
   { kind: 'trick', type: 'blue', lane: 1, y: 0.45, offset: -10 },
 ];
 
+function clearLayerStairs() {
+  if (layerStairGroup) { scene.remove(layerStairGroup); layerStairGroup = null; }
+  while (layerGateWalls.length) {
+    const wall = layerGateWalls.pop();
+    const index = obstacles.indexOf(wall);
+    if (index >= 0) obstacles.splice(index, 1);
+    scene.remove(wall);
+  }
+}
+
+function createLayerStairs() {
+  clearLayerStairs();
+  layerGateHits = 0;
+  layerStairGroup = new THREE.Group();
+  const stairMat = new THREE.MeshStandardMaterial({ color: 0x405c99, roughness: 0.8 });
+  const heights = [0.5, 1.8, 3.1, 4.4, 5.0];
+  for (let i = 0; i < heights.length; i++) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(8, 0.45, 12), stairMat);
+    step.position.set(0, heights[i], -72 - i * 12);
+    layerStairGroup.add(step);
+  }
+  scene.add(layerStairGroup);
+  // 入口横墙：不完成两次跳跃就会撞上，完成后会被移除。
+  for (let lane = 0; lane < 3; lane++) {
+    spawnObstacle(-132, lane, 'tall');
+    const wall = obstacles[obstacles.length - 1];
+    wall.userData.layerGateWall = true;
+    layerGateWalls.push(wall);
+  }
+  addTrickCube('green', 1, 0.45, -70);
+  tricks[tricks.length - 1].userData.layerGate = true;
+  addTrickCube('green', 1, 1.5, -82);
+  tricks[tricks.length - 1].userData.layerGate = true;
+}
+
+function activateLayerRunway() {
+  if (state.level !== 3 || state.levelGround >= 5) return;
+  state.levelGround = 5;
+  road.position.y = 5;
+  for (const dash of lines) dash.position.y = 5.01;
+  clearLayerStairs();
+  tutorialPromptText('二段跳成功，进入高层跑道', 2);
+}
+
 function spawnFixedWave(z, index) {
   // 每一关选择自己的固定波次表；此前错误地把“整张地图”当成了“一波”，导致首波三道全变成高墙。
   const map = LEVEL_PATTERNS[(state.level - 1) % LEVEL_PATTERNS.length];
@@ -1253,15 +1300,18 @@ function spawnFixedWave(z, index) {
 function updateLevel(dt) {
   if (!state.levelActive || state.bossActive) return;
   state.levelClock += dt;
-  if (state.level >= 3 && state.distance > 720 && !levelLayerShown) {
+  if (state.level === 3 && state.distance > 720 && !levelLayerShown) {
     levelLayerShown = true;
-    state.levelGround = 5;
-    road.position.y = 5;
-    for (const dash of lines) dash.position.y = 5.01;
-    // 二段跳引导：先让玩家完成上层跑道入口的空中动作。
-    addTrickCube('green', 1, 0.45, -70);
-    addTrickCube('green', 1, 1.5, -82);
-    tutorialPromptText('第三关：跑道抬升，使用二段跳登上高层', 4);
+    state.nextSpawn = state.distance + 150;
+    createLayerStairs();
+    tutorialPromptText('第三关：阶梯跑道入口，完成二段跳才能登上高层', 4);
+  }
+  if (layerStairGroup) {
+    layerStairGroup.position.z += (18 + state.level * 2) * dt;
+    if (layerStairGroup.position.z > 20) {
+      scene.remove(layerStairGroup);
+      layerStairGroup = null;
+    }
   }
   if (state.distance >= state.nextSpawn) {
     spawnFixedWave(-82, Math.floor(state.distance / 32));
@@ -1656,6 +1706,10 @@ function tick() {
         state.vy = haste ? 12 : 9; // 空中触发 = 二段跳
         floatText(t.position, '+500');
         sfx('trick');
+        if (t.userData.layerGate) {
+          layerGateHits++;
+          if (layerGateHits >= 2) activateLayerRunway();
+        }
         removeTrick(i);
       } else if (type === 'red' && (keys['ArrowLeft'] || keys['a'] || (comboAssist && tutorialInput.left > 0))) {
         state.bonus += 500;
