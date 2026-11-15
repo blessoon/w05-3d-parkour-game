@@ -102,11 +102,11 @@
   #tutorialPrompt.visible { opacity: 1; }
   #creditsScreen { background: #000; overflow: hidden; }
   #creditsRoll { width: min(90vw, 760px); text-align: center; }
-  #creditsNames { transform: translateY(55vh); animation: creditsNamesRoll 16s 4s linear forwards; }
+  #creditsNames { transform: translateY(110vh); animation: creditsNamesRoll 16s 4s linear forwards; }
   #creditsRoll h1 { font-size: 42px; margin-bottom: 34px; }
   #creditsRoll p { margin: 18px 0; font-size: 22px; }
   #creditsEnd { position: fixed; left: 50%; top: 100%; transform: translate(-50%, -50%); font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endRoll 9s 20s linear forwards; }
-  @keyframes creditsNamesRoll { 0% { transform: translateY(55vh); } 100% { transform: translateY(-125vh); } }
+  @keyframes creditsNamesRoll { 0% { transform: translateY(110vh); } 100% { transform: translateY(-125vh); } }
   /* END 在名单滚出后从底部滚到中央，停留3秒，再用4秒淡出。 */
   @keyframes endRoll { 0% { top: 110%; opacity: 0; } 22% { top: 50%; opacity: 1; } 55% { top: 50%; opacity: 1; } 100% { top: 50%; opacity: 0; } }
 </style>
@@ -1164,7 +1164,7 @@ function createBoss() {
 
 function spawnBossVolley() {
   // 弹幕密度随轮次增加；每枚弹幕有独立延迟、水平/垂直速度，形成随机先后和斜向路线。
-  const count = 9 + state.bossRound * 2;
+  const count = Math.ceil((9 + state.bossRound * 2) / 2);
   for (let i = 0; i < count; i++) {
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32 + Math.random() * 0.12, 12, 12), new THREE.MeshBasicMaterial({ color: 0xff1828 }));
     const lane = Math.floor(Math.random() * 3);
