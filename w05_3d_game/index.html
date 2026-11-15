@@ -101,12 +101,14 @@
   }
   #tutorialPrompt.visible { opacity: 1; }
   #creditsScreen { background: #000; overflow: hidden; }
-  #creditsRoll { width: min(90vw, 760px); text-align: center; transform: translateY(55vh); animation: creditsRoll 22s 4s linear forwards; }
+  #creditsRoll { width: min(90vw, 760px); text-align: center; }
+  #creditsNames { transform: translateY(55vh); animation: creditsNamesRoll 16s 4s linear forwards; }
   #creditsRoll h1 { font-size: 42px; margin-bottom: 34px; }
   #creditsRoll p { margin: 18px 0; font-size: 22px; }
-  #creditsRoll strong { display: block; margin-top: 54px; font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endStop 22s linear forwards; }
-  @keyframes creditsRoll { 0% { transform: translateY(55vh); } 82% { transform: translateY(-12vh); } 100% { transform: translateY(-12vh); } }
-  @keyframes endStop { 0%, 78% { opacity: 0; } 86%, 94% { opacity: 1; } 100% { opacity: 0; } }
+  #creditsEnd { position: fixed; left: 50%; top: 100%; transform: translate(-50%, -50%); font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endRoll 9s 20s linear forwards; }
+  @keyframes creditsNamesRoll { 0% { transform: translateY(55vh); } 100% { transform: translateY(-125vh); } }
+  /* END 在名单滚出后从底部滚到中央，停留3秒，再用4秒淡出。 */
+  @keyframes endRoll { 0% { top: 110%; opacity: 0; } 22% { top: 50%; opacity: 1; } 55% { top: 50%; opacity: 1; } 100% { top: 50%; opacity: 0; } }
 </style>
 <script type="importmap">
 { "imports": { "three": "./lib/three.module.js" } }
@@ -183,13 +185,15 @@
 <!-- Boss结束后的电影字幕 -->
 <div id="creditsScreen" class="screen hidden">
   <div id="creditsRoll">
-    <h1>制作组</h1>
-    <p>游戏内容与玩法：徐羿</p>
-    <p>操作与手感优化：刘尚昆</p>
-    <p>UI与音效设计：陈乐儒</p>
-    <p>Debug、性能与兼容性：熊嘉舜</p>
-    <p>Demo模式与宣传视频：田富尧</p>
-    <strong>END</strong>
+    <div id="creditsNames">
+      <h1>制作组</h1>
+      <p>游戏内容与玩法：徐羿</p>
+      <p>操作与手感优化：刘尚昆</p>
+      <p>UI与音效设计：陈乐儒</p>
+      <p>Debug、性能与兼容性：熊嘉舜</p>
+      <p>Demo模式与宣传视频：田富尧</p>
+    </div>
+    <strong id="creditsEnd">END</strong>
   </div>
 </div>
 
@@ -1195,8 +1199,8 @@ function finishBossFight() {
   const credits = screens.credits;
   credits.classList.remove('eyeOpen');
   showScreen('credits');
-  setTimeout(() => credits.classList.add('eyeOpen'), 22000);
-  setTimeout(() => showScreen('menu'), 26000);
+  setTimeout(() => credits.classList.add('eyeOpen'), 29000);
+  setTimeout(() => showScreen('menu'), 33000);
 }
 
 function updateBoss(dt, v) {
@@ -1312,9 +1316,13 @@ function updateDemo(dt) {
   };
   const target = candidates.sort((a, b) => threatScore(a) - threatScore(b))[0];
   if (!state.bossActive) {
-    const next = obstacles.find(o => o.position.z > -20 && o.position.z < -4);
-    if (next && next.userData.top < 0.6 && !state.jumping) {
-      state.jumping = true; state.vy = 10;
+    const upcoming = obstacles.filter(o => o.position.z > -34 && o.position.z < -3);
+    const safe = candidates.find(lane => !upcoming.some(o => Math.abs(o.position.x - LANES[lane]) < 0.1 && o.position.z > -22));
+    const next = upcoming.sort((a, b) => b.position.z - a.position.z)[0];
+    if (safe !== undefined) state.lane = safe;
+    if (next && Math.abs(next.position.x - player.position.x) < 1.1) {
+      if (next.userData.top < 0.6 && !state.jumping) { state.jumping = true; state.vy = 10; }
+      else if (next.userData.top > 1.7 && state.slideT <= 0) state.slideT = 0.8;
     }
   } else {
     state.lane = target;
