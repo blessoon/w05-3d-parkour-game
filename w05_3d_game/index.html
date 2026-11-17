@@ -73,8 +73,12 @@
   @keyframes blink { from { opacity: 1; } to { opacity: .35; } }
   /* 菜单类界面 */
   .screen {
-    position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 16px;
+    pointer-events: auto;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 24px 12px;
     color: #fff; font: 22px system-ui, sans-serif;
     background: rgba(0,0,0,.6);
   }
@@ -86,6 +90,24 @@
     min-width: 240px;
   }
   .screen button:hover { background: #2d4479; }
+  .screen button { touch-action: manipulation; position: relative; z-index: 101; }
+  /* 嵌入式窄预览：避免垂直居中把菜单顶部裁掉 */
+  @media (max-width: 700px), (max-height: 620px) {
+    .screen {
+      justify-content: flex-start;
+      gap: 12px;
+      padding: 18px 12px 28px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .screen h1 { font-size: clamp(28px, 8vw, 38px); margin: 4px 0 8px; }
+    .screen button {
+      width: min(88vw, 360px);
+      min-width: 0;
+      padding: 12px 16px;
+      font-size: clamp(18px, 5vw, 24px);
+    }
+    .char-row { flex-wrap: wrap; justify-content: center; gap: 10px; }
+  }
   .char-row { display: flex; gap: 20px; }
   .char-btn { width: 140px; height: 80px; min-width: 0 !important; font-size: 26px !important; }
   .char-btn.selected { border-color: #fff; box-shadow: 0 0 12px #fff; }
@@ -102,10 +124,10 @@
   #tutorialPrompt.visible { opacity: 1; }
   #creditsScreen { background: #000; overflow: hidden; }
   #creditsRoll { width: min(90vw, 760px); text-align: center; }
-  #creditsNames { transform: translateY(110vh); animation: creditsNamesRoll 16s 1s linear forwards; }
+  #creditsNames { transform: translateY(110vh); animation: creditsNamesRoll 16s 4s linear forwards; }
   #creditsRoll h1 { font-size: 42px; margin-bottom: 34px; }
   #creditsRoll p { margin: 18px 0; font-size: 22px; }
-  #creditsEnd { position: fixed; left: 50%; top: 100%; transform: translate(-50%, -50%); font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endRoll 9s 17s linear forwards; }
+  #creditsEnd { position: fixed; left: 50%; top: 100%; transform: translate(-50%, -50%); font-size: 92px; letter-spacing: 14px; opacity: 0; animation: endRoll 9s 20s linear forwards; }
   @keyframes creditsNamesRoll { 0% { transform: translateY(110vh); } 100% { transform: translateY(-125vh); } }
   /* END 在名单滚出后从底部滚到中央，停留3秒，再用4秒淡出。 */
   @keyframes endRoll { 0% { top: 110%; opacity: 0; } 22% { top: 50%; opacity: 1; } 55% { top: 50%; opacity: 1; } 100% { top: 50%; opacity: 0; } }
@@ -156,8 +178,8 @@
 <div id="charScreen" class="screen hidden">
   <h1>角色选择</h1>
   <div class="char-row">
-    <button class="char-btn selected" data-color="0xff5566" data-char="red" style="background:#a02840;border-color:#ff5566">红色·无敌</button>
-    <button class="char-btn" data-color="0x33cc66" data-char="green" style="background:#1f7a40;border-color:#33cc66">绿色·疾速</button>
+    <button class="char-btn selected" data-color="0xff5566" data-char="red" style="background:#a02840;border-color:#ff5566">红色·重装稳健</button>
+    <button class="char-btn" data-color="0x33cc66" data-char="green" style="background:#1f7a40;border-color:#33cc66">绿色·灵活疾速</button>
   </div>
   <button class="back">返回</button>
 </div>
@@ -166,15 +188,15 @@
 <div id="helpScreen" class="screen hidden">
   <h1>玩法说明</h1>
   <div>
-    ← → 或 A / D 换道，↑ 跳跃，↓ 滑铲冲刺，Esc 暂停<br>
+    ← → 或 A / D 换道（轻按一次只换一条），↑ / W 跳跃，↓ / S 滑铲，Esc 暂停<br>
+    操作有约 0.12 秒输入缓冲：提前按也能在落地/结束滑铲时生效；空中按 ↑ 不会重复起跳<br>
     橙色高墙要换道躲开，蓝色矮栅栏可以跳过，紫色悬梁要按 ↓ 滑铲通过<br>
-    身体进入粉色方块时按 空格 +100 分，连吃有连击加成（地上的粉圈是空中方块的影子）<br>
-    每拾取 1 个粉色方块为技能充能 1 点，攒满 3 点按 V 释放（不消耗右上角计数）<br>
-    🔴 红色技能：无敌 8 秒，火焰环绕<br>
-    🟢 绿色技能：疾速 15 秒（跳跃/换道/滑铲都更快，带残影），期间拾取粉色方块 +5 秒<br>
-    🟢 绿色被动：空中按 Z 迅速下降，可控制落点躲避空中障碍<br>
-    技巧方块（接触时按住组合键触发）：🟩空格+↑二段跳　🟥空格+←左移　🟦空格+→右移　🩵空格+↓滑铲，各 +500 分<br>
-    ⬜白色长条：按住空格滞空滑行，每经过一单位长度 +100 分<br>
+    身体接近粉色方块时按 空格 +100 分，判定带有少量容错；连吃有连击加成（地上的粉圈是空中方块的影子）<br>
+    每拾取 1 个粉色方块为技能充能 1 点，攒满 3 点按 V 释放；技能也会在屏幕左上角提示<br>
+    🔴 红色：起跳稳定、滑铲时间更长；技能无敌 8 秒，火焰环绕<br>
+    🟢 绿色：换道和起跳更快；技能疾速 15 秒并留下残影，期间拾取粉色方块 +5 秒；空中按 Z 可快速下落<br>
+    技巧方块（接近时按住组合键触发）：🟩空格+↑二段跳　🟥空格+←左移　🟦空格+→右移　🩵空格+↓滑铲，各 +500 分<br>
+    ⬜白色长条：按住空格滞空滑行，每经过一单位长度 +100 分；空格也可在接近粉块时拾取<br>
     技巧方块会成链出现（2~4 个），按箭头顺序连续操作即可全部接上，链内不会有障碍<br>
     粉色方块会出现在障碍波的"活路"上：地面的粉块提示安全道/滑铲道，空中的粉块提示跳跃道<br>
     主菜单的“玩法教程”含基础方块教程与组合方块教程；教学速度固定为 28
@@ -263,8 +285,52 @@ for (let i = 0; i < 30; i++) {
   scene.add(b);
 }
 
+// ---------- 科技感环境 ----------
+// 远景建筑之外加入霓虹灯柱、能量环和悬浮信标，随跑道移动并循环复用。
+const techProps = [];
+const neonMats = [
+  new THREE.MeshStandardMaterial({ color: 0x22ccff, emissive: 0x087caa, emissiveIntensity: 2.4 }),
+  new THREE.MeshStandardMaterial({ color: 0xff44cc, emissive: 0x8b145f, emissiveIntensity: 2.2 }),
+  new THREE.MeshStandardMaterial({ color: 0x8b6cff, emissive: 0x382080, emissiveIntensity: 2.0 }),
+];
+const darkTechMat = new THREE.MeshStandardMaterial({ color: 0x111936, metalness: 0.85, roughness: 0.22, emissive: 0x07112d, emissiveIntensity: 0.8 });
+
+function addTechProp(side, z, index) {
+  const group = new THREE.Group();
+  const x = side * (6.1 + (index % 3) * 1.25);
+  const colorMat = neonMats[index % neonMats.length];
+  // 发光底座与竖直能量柱
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.7, 0.22, 8), darkTechMat);
+  base.position.y = 0.11;
+  group.add(base);
+  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.2, 3.2 + (index % 2) * 1.3, 8), colorMat);
+  pillar.position.y = 1.7;
+  group.add(pillar);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.055, 8, 24), colorMat);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 2.8;
+  group.add(ring);
+  // 侧向全息面板
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.72, 0.06), darkTechMat);
+  panel.position.set(-side * 0.45, 2.0, 0);
+  group.add(panel);
+  const panelGlow = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 0.48), colorMat);
+  panelGlow.position.set(-side * 0.45, 2.0, side * 0.04);
+  panelGlow.rotation.y = side < 0 ? 0.18 : -0.18;
+  group.add(panelGlow);
+  group.position.set(x, 0, z);
+  group.rotation.y = side * 0.08;
+  group.userData = { spin: (index % 2 ? 1 : -1) * 0.8, phase: index * 0.7 };
+  scene.add(group);
+  techProps.push(group);
+}
+for (let i = 0; i < 18; i++) {
+  addTechProp(i % 2 === 0 ? -1 : 1, 8 - i * 13, i);
+}
+
 // ---------- 玩家 ----------
 const playerGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9); // 共享几何体（残影也用）
+// 角色差异：红色动作更稳、容错更宽；绿色响应更快、跳跃更高。
 const player = new THREE.Mesh(
   playerGeo,
   new THREE.MeshStandardMaterial({ color: 0xff5566 })
@@ -529,6 +595,7 @@ function spawnGhost() {
 }
 
 function activateSkill() {
+  if (state.skillCharge < 3 || state.skillT > 0) return;
   state.skillCharge -= 3;
   state.skillT = state.char === 'red' ? 8 : 15;
   if (state.char === 'red') startFlames();
@@ -592,7 +659,7 @@ function spawnWave(z, difficulty) {
 
 // 引导方块：在障碍波的正确路径上放粉色方块（约 30% 概率，避免技能泛滥）
 function guideForWave(z, laneTypes) {
-  if (Math.random() > 0.3) return;
+  if (Math.random() > 0.55) return;
   if (state.skillCharge >= 3) return; // 充能已满就不再刷引导方块
   const freeLanes = [0, 1, 2].filter(l => !laneTypes[l]);
   const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -620,7 +687,7 @@ const state = {
   lane: 1,            // 当前跑道索引
   vy: 0,              // 垂直速度
   jumping: false,
-  speed: 20,          // 前进速度，会逐渐加快
+  speed: 17,          // 前进速度，适当降低难度
   distance: 0,
   bonus: 0,           // 吃粉色方块获得的额外分数
   bonusCount: 0,      // 吃到的粉色方块数量
@@ -630,9 +697,10 @@ const state = {
   skillCharge: 0,     // 技能充能（0~3，拾取粉色方块累积）
   skillT: 0,          // 技能剩余时间（>0 表示技能生效中）
   slideT: 0,          // 滑铲剩余时间（>0 表示正在滑铲）
-  nextSpawn: 40,
-  nextBonus: 70,      // 下一个粉色方块的生成距离
-  nextTrick: 90,      // 下一个技巧方块的生成距离
+  inputBuffer: { jump: 0, slide: 0 }, // 提前输入缓冲，提升动作连贯性
+  nextSpawn: 55,
+  nextBonus: 60,      // 更早出现奖励，帮助积累技能
+  nextTrick: 75,      // 更早出现技巧方块
   running: false,
   paused: false,
   dead: false,
@@ -1025,6 +1093,8 @@ const bonusCountEl = document.getElementById('bonusCount');
 const flashEl = document.getElementById('flash');
 const skillHudEl = document.getElementById('skillHud');
 const pauseBtns = document.getElementById('pauseBtns');
+const btnResume = document.getElementById('btnResume');
+const btnMenu = document.getElementById('btnMenu');
 
 // ---------- 音效（Web Audio 程序合成，无外部音频素材）----------
 let audioCtx = null, masterGain = null;
@@ -1186,7 +1256,7 @@ function startBossFight() {
   state.bossGapT = 0;
   bossVolleyT = 0;
   createBoss();
-  // Boss战不显示中央持续提示，避免遮挡弹幕和躲避路线。
+  tutorialPromptText('终点 Boss：黑色暴怒', 3);
 }
 
 function finishBossFight() {
@@ -1197,8 +1267,10 @@ function finishBossFight() {
   state.running = false;
   tutorialPromptText('', 0);
   const credits = screens.credits;
+  credits.classList.remove('eyeOpen');
   showScreen('credits');
-  setTimeout(() => showScreen('menu'), 30000);
+  setTimeout(() => credits.classList.add('eyeOpen'), 29000);
+  setTimeout(() => showScreen('menu'), 33000);
 }
 
 function updateBoss(dt, v) {
@@ -1299,7 +1371,7 @@ function startBossDemo() {
   sfx('click');
   startLevel(5);
   state.demo = true;
-  tutorialPromptText('', 0);
+  tutorialPromptText('第5关 Boss 演示模式：自动躲避并通关', 4);
 }
 
 function updateDemo(dt) {
@@ -1335,14 +1407,17 @@ function startGame() {
   while (tricks.length) removeTrick(tricks.length - 1);
   obstacles.length = 0;
   Object.assign(state, {
-    lane: 1, vy: 0, jumping: false, speed: 20,
+    lane: 1, vy: 0, jumping: false, speed: 17,
     distance: 0, bonus: 0, bonusCount: 0, combo: 0, comboT: 0,
     skillCharge: 0, skillT: 0,
-    slideT: 0, nextSpawn: 40, nextBonus: 70, nextTrick: 90,
+    slideT: 0, nextSpawn: 55, nextBonus: 60, nextTrick: 75,
     running: true, paused: false, dead: false, tutorial: false,
     level: 0, levelActive: false, levelClock: 0, bossActive: false, demo: false,
   });
   ui = 'playing';
+  state.inputBuffer.jump = 0;
+  state.inputBuffer.slide = 0;
+  clearInputState();
   // 清理上一局的技能特效
   if (flameGroup) { scene.remove(flameGroup); flameGroup = null; }
   for (const g of ghosts) scene.remove(g.mesh);
@@ -1362,8 +1437,12 @@ function gameOver() {
   sfx('crash');
   overlay.querySelector('h1').textContent = '游戏结束';
   overlay.querySelector('div').textContent = `最终得分：${Math.floor(state.distance) + state.bonus}（粉色方块 ×${state.bonusCount}）`;
-  overlay.querySelector('small').textContent = state.level > 0 ? '按任意键重新开始本关' : '按任意键重新开始';
-  pauseBtns.classList.add('hidden'); // 结束界面不显示暂停按钮
+  overlay.querySelector('small').textContent = state.level > 0 ? '按任意键重新开始本关，或点击按钮返回主界面' : '按任意键重新开始，或点击按钮返回主界面';
+  // 失败后同时提供“重新开始”和“返回主界面”，避免只能靠键盘操作。
+  btnResume.textContent = '重新开始';
+  btnResume.classList.remove('hidden');
+  btnMenu.classList.remove('hidden');
+  pauseBtns.classList.remove('hidden');
   overlay.classList.remove('hidden');
 }
 
@@ -1415,6 +1494,7 @@ for (const btn of document.querySelectorAll('.char-btn')) {
 function togglePause() {
   if (!state.running) return;
   state.paused = !state.paused;
+  clearInputState();
   ui = state.paused ? 'paused' : (state.tutorial ? 'tutorialPlaying' : 'playing');
   if (state.paused) {
     overlay.querySelector('h1').textContent = '已暂停';
@@ -1428,13 +1508,28 @@ function togglePause() {
   }
 }
 
-document.getElementById('btnResume').addEventListener('click', () => togglePause());
-document.getElementById('btnMenu').addEventListener('click', () => {
+btnResume.addEventListener('click', () => {
+  if (ui === 'over') {
+    ensureAudio();
+    sfx('click');
+    startGame();
+    return;
+  }
+  togglePause();
+});
+btnMenu.addEventListener('click', (event) => {
+  // 阻止全局 pointerdown 处理器把“返回主界面”误判成重新开始。
+  event.preventDefault();
+  event.stopPropagation();
   // 结束本局并回主菜单
   state.running = false;
   state.paused = false;
+  state.dead = false;
   state.tutorial = false;
+  state.levelActive = false;
+  state.bossActive = false;
   tutorial.active = false;
+  clearInputState();
   tutorialPromptText('', 0);
   clearTutorialObjects();
   overlay.classList.add('hidden');
@@ -1443,50 +1538,80 @@ document.getElementById('btnMenu').addEventListener('click', () => {
 });
 
 // 按键状态跟踪（技巧方块需要检测"同时按住"）
-const keys = {};
+const keys = Object.create(null);
 // 组合教程的教学宽容输入：方向键按下后保留短暂窗口，避免玩家必须精确长按。
 const tutorialInput = { up: 0, down: 0, left: 0, right: 0 };
+
+function normalizeKey(key) {
+  return key.length === 1 ? key.toLowerCase() : key;
+}
+
+function clearInputState() {
+  for (const key in keys) keys[key] = false;
+  tutorialInput.up = 0;
+  tutorialInput.down = 0;
+  tutorialInput.left = 0;
+  tutorialInput.right = 0;
+}
+
 addEventListener('keyup', (e) => {
-  keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false;
+  keys[normalizeKey(e.key)] = false;
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearInputState();
 });
 
 addEventListener('keydown', (e) => {
-  keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true;
+  const key = normalizeKey(e.key);
+  const wasDown = Boolean(keys[key]);
+  const gameKeys = [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'z', 'v'];
+
+  // 游戏进行时不让方向键、WASD 和空格滚动网页。
+  if (state.running && gameKeys.includes(e.key)) e.preventDefault();
+
+  // 忽略浏览器 key-repeat：连续按住方向键不会意外换多条跑道。
+  if (wasDown) return;
+  keys[key] = true;
+
   if (state.tutorial && tutorial.mode === 'combo') {
     if (e.key === 'ArrowUp') tutorialInput.up = 0.7;
     if (e.key === 'ArrowDown') tutorialInput.down = 0.7;
-    if (e.key === 'ArrowLeft' || e.key === 'a') tutorialInput.left = 0.7;
-    if (e.key === 'ArrowRight' || e.key === 'd') tutorialInput.right = 0.7;
+    if (e.key === 'ArrowLeft' || key === 'a') tutorialInput.left = 0.7;
+    if (e.key === 'ArrowRight' || key === 'd') tutorialInput.right = 0.7;
   }
-  if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return; // 菜单界面不响应游戏按键
+
+  if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return;
   if (state.running && e.key === 'Escape') { togglePause(); return; }
-  if (!state.running) { if (state.dead) { if (state.level > 0) startLevel(state.level); else startGame(); } return; }
+  if (!state.running) { if (state.level > 0) startLevel(state.level); else startGame(); clearInputState(); return; }
   if (state.paused) return;
-  if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowLeft' || e.key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
-  if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowRight' || e.key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
-  if (e.key === 'ArrowUp' && !state.jumping) {
-    state.jumping = true;
-    sfx('jump');
-    // 绿色技能期间：起跳更猛，更快到达最高点
-    state.vy = (state.skillT > 0 && state.char === 'green') ? 12 : 9;
+
+  if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowLeft' || key === 'a') && state.lane > 0) { state.lane--; sfx('move'); }
+  if ((!state.tutorial || !tutorial.lockCenter) && (e.key === 'ArrowRight' || key === 'd') && state.lane < 2) { state.lane++; sfx('move'); }
+  if (e.key === 'ArrowUp' || key === 'w') {
+    if (!state.jumping) {
+      state.jumping = true;
+      sfx('jump');
+      // 绿色更轻快，红色更稳；普通角色保持标准手感。
+      state.vy = state.char === 'green' ? 11.5 : state.char === 'red' ? 9.5 : 9;
+    } else {
+      state.inputBuffer.jump = 0.12;
+    }
   }
-  // ↓ 滑铲冲刺：高度减半 0.8 秒，速度先冲后回落
-  if (e.key === 'ArrowDown' && state.slideT <= 0) {
-    state.slideT = 0.8;
+  // ↓/S 滑铲：落地前提前按也会在落地瞬间接上，避免错过窗口。
+  if (e.key === 'ArrowDown' || key === 's') {
+    if (state.slideT <= 0 && !state.jumping) state.slideT = state.char === 'red' ? 0.95 : 0.8;
+    else state.inputBuffer.slide = 0.12;
   }
   // 绿色被动（无需开技能）：空中按 Z 迅速下降，控制落点
-  if ((e.key === 'z' || e.key === 'Z') && state.char === 'green' && state.jumping) {
-    state.vy = -18;
-  }
+  if (key === 'z' && state.char === 'green' && state.jumping) state.vy = -18;
   // V 释放技能：消耗 3 点充能
-  if ((e.key === 'v' || e.key === 'V') && state.skillT <= 0 && state.skillCharge >= 3) {
-    activateSkill();
-  }
+  if (key === 'v' && state.skillT <= 0 && state.skillCharge >= 3) activateSkill();
+
   // 空格：玩家中心进入粉色方块内部时按下，+100 分
   if (e.key === ' ') {
     for (let i = bonuses.length - 1; i >= 0; i--) {
       const b = bonuses[i];
-      // 判定：横向保持 1.0（不跨道），上下/前后放宽到 1.35
       const inside =
         Math.abs(b.position.x - player.position.x) < 1.0 &&
         Math.abs(b.position.y - player.position.y) < 1.35 &&
@@ -1497,9 +1622,11 @@ addEventListener('keydown', (e) => {
 });
 
 // 鼠标点击：菜单界面忽略；结束界面点击重新开始（游戏中点击不再暂停）
-addEventListener('pointerdown', () => {
+addEventListener('pointerdown', (event) => {
+  // overlay 按钮的 pointerdown 不能触发“失败后点击重新开始”。
+  if (event.target.closest && event.target.closest('#pauseBtns')) return;
   if (ui === 'menu' || ui === 'tutorial' || ui === 'levels' || ui === 'credits' || ui === 'char' || ui === 'help') return;
-  if (!state.running && ui === 'over') { if (state.level > 0) startLevel(state.level); else startGame(); }
+  if (!state.running && ui === 'over') startGame();
 });
 
 addEventListener('resize', () => {
@@ -1526,6 +1653,8 @@ function tick() {
     }
     const haste = state.skillT > 0 && state.char === 'green';      // 绿色技能：疾速
     const invincible = state.skillT > 0 && state.char === 'red';   // 红色技能：无敌
+    state.inputBuffer.jump = Math.max(0, state.inputBuffer.jump - dt);
+    state.inputBuffer.slide = Math.max(0, state.inputBuffer.slide - dt);
 
     // 滑铲计时与冲刺速度加成：0.1s 内提速到 1.5 倍，再 0.6s 内先快后慢衰减回 1 倍
     let boost = 1;
@@ -1543,7 +1672,7 @@ function tick() {
     updateBoss(dt, v);
 
     state.distance += v * dt;
-    state.speed = state.tutorial ? 28 : Math.min(state.speed + dt * 0.35, 35); // 教学固定28，普通模式逐渐加速
+    state.speed = state.tutorial ? 26 : Math.min(state.speed + dt * 0.22, 30); // 教学固定26，普通模式更缓慢加速
     if (state.tutorial && tutorial.lockCenter) state.lane = 1;
     scoreEl.textContent = Math.floor(state.distance) + state.bonus;
     speedEl.textContent = v.toFixed(1);
@@ -1564,7 +1693,17 @@ function tick() {
       if (player.position.y <= groundY) {
         player.position.y = groundY;
         state.jumping = false;
+        if (state.inputBuffer.slide > 0) {
+          state.slideT = state.char === 'red' ? 0.95 : 0.8;
+          state.inputBuffer.slide = 0;
+        }
       }
+    }
+    if (!state.jumping && state.inputBuffer.jump > 0 && state.slideT <= 0) {
+      state.jumping = true;
+      state.vy = state.char === 'green' ? 11.5 : state.char === 'red' ? 9.5 : 9;
+      state.inputBuffer.jump = 0;
+      sfx('jump');
     }
     // 滑铲：模型高度减半，0.8 秒后平滑复原
     const targetScale = state.slideT > 0 ? 0.5 : 1;
@@ -1610,9 +1749,9 @@ function tick() {
 
     // 生成障碍：难度随分数上升，间距随速度缩短
     if (!state.tutorial && !state.levelActive && state.distance >= state.nextSpawn) {
-      const difficulty = state.distance > 800 ? 2 : state.distance > 300 ? 1 : 0;
+      const difficulty = state.distance > 1200 ? 2 : state.distance > 500 ? 1 : 0;
       spawnWave(-80, difficulty);
-      const gap = Math.max(26 - state.speed * 0.7, 10);
+      const gap = Math.max(32 - state.speed * 0.65, 15);
       state.nextSpawn += gap + Math.random() * gap * 0.6;
     }
 
@@ -1632,12 +1771,12 @@ function tick() {
         // 链覆盖范围内不再生成障碍和其它方块，保证能连上且不会必死
         state.nextSpawn = Math.max(state.nextSpawn, state.distance + chainLen + 18);
         state.nextBonus = Math.max(state.nextBonus, state.distance + chainLen + 18);
-        state.nextTrick += chainLen + 40 + Math.random() * 40;
+        state.nextTrick += chainLen + 55 + Math.random() * 55;
       } else {
         if (spawnTrick(-85)) {
           state.nextSpawn = Math.max(state.nextSpawn, state.distance + 14);
         }
-        state.nextTrick += 70 + Math.random() * 70;
+        state.nextTrick += 90 + Math.random() * 80;
       }
     }
 
@@ -1708,6 +1847,16 @@ function tick() {
       }
     }
 
+    // 科技景物随道路向后移动，越过镜头后循环回到远处。
+    for (const prop of techProps) {
+      prop.position.z += v * dt;
+      prop.rotation.y += prop.userData.spin * dt;
+      const ring = prop.children[2];
+      ring.rotation.z += prop.userData.spin * dt * 1.8;
+      ring.position.y = 2.8 + Math.sin(clock.elapsedTime * 2 + prop.userData.phase) * 0.12;
+      if (prop.position.z > 14) prop.position.z -= 234;
+    }
+
     // 奖励方块随场景移动（影子同步），出界后移除
     for (let i = bonuses.length - 1; i >= 0; i--) {
       const b = bonuses[i];
@@ -1726,10 +1875,11 @@ function tick() {
         obstacles.splice(i, 1);
         continue;
       }
-      const hitX = Math.abs(o.position.x - player.position.x) < 1.0;
-      const hitZ = Math.abs(o.position.z - player.position.z) < 1.0;
-      // 垂直方向重叠才算撞上：用玩家当前实际身高（滑铲时减半）
-      const pHalf = 0.45 * player.scale.y;
+      // 判定使用略小于模型的胶囊近似，给换道和动作留出公平容错。
+      const hitX = Math.abs(o.position.x - player.position.x) < 0.86;
+      const hitZ = Math.abs(o.position.z - player.position.z) < 0.88;
+      // 垂直方向重叠才算撞上：滑铲时降低身高。
+      const pHalf = 0.42 * player.scale.y;
       const hitY = (player.position.y - pHalf) < o.userData.top &&
                    (player.position.y + pHalf) > o.userData.bottom;
       if (hitX && hitZ && hitY && !invincible && !state.demo) {
